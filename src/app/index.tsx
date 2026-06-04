@@ -1,104 +1,106 @@
-import * as Device from 'expo-device';
 import { Link } from 'expo-router';
-import { Platform, Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
 
 export default function HomeScreen() {
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.hero}>
+        <Text style={styles.emoji}>♻️</Text>
+        <Text style={styles.title}>RecycleBuddy</Text>
+        <Text style={styles.subtitle}>
+          Scan items to find out if they're recyclable and locate nearby recycling centers.
+        </Text>
+      </View>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+      <View style={styles.cards}>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>🌍 Why recycle?</Text>
+          <Text style={styles.cardText}>
+            Recycling reduces waste in landfills, saves energy, and helps protect the environment for future generations.
+          </Text>
+        </View>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-          <Link href="/scan" asChild>
-            <Pressable style={styles.scanLink}>
-              <ThemedText type="linkPrimary">Go to the recycle scanner</ThemedText>
-            </Pressable>
-          </Link>
-        </ThemedView>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>📍 Location</Text>
+          <Text style={styles.cardText}>
+            We'll use your location to find the nearest recycling centers for items that need special disposal.
+          </Text>
+        </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>🎮 Track your impact</Text>
+          <Text style={styles.cardText}>
+            Every item you scan is tracked. See how much waste you've kept out of landfills!
+          </Text>
+        </View>
+      </View>
+
+      <Link href="/scan" asChild>
+        <Pressable style={styles.button}>
+          <Text style={styles.buttonText}>Start Scanning</Text>
+        </Pressable>
+      </Link>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: '#000',
+    paddingHorizontal: 24,
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
+  hero: {
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+    paddingVertical: 40,
+    gap: 12,
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+  emoji: {
+    fontSize: 64,
   },
   title: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#fff',
     textAlign: 'center',
   },
-  code: {
-    textTransform: 'uppercase',
+  subtitle: {
+    fontSize: 16,
+    color: '#aaa',
+    textAlign: 'center',
+    lineHeight: 24,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  cards: {
+    gap: 12,
+    flex: 1,
+  },
+  card: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 16,
+    gap: 6,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  cardText: {
+    fontSize: 14,
+    color: '#aaa',
+    lineHeight: 20,
+  },
+  button: {
+    backgroundColor: '#2e7d32',
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
   },
 });

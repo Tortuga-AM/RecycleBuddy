@@ -1,9 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as mobilenet from '@tensorflow-models/mobilenet';
 import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-react-native';
+//import '@tensorflow/tfjs-react-native';
 import { decodeJpeg } from '@tensorflow/tfjs-react-native';
-import { Camera } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
+
 
 const STORAGE_KEY = '@recyclebuddy/stats';
 const EARTH911_API_KEY = ''; // set your Earth911 API key here for location-based recycling lookup
@@ -101,8 +102,8 @@ function explainWhyText(label: string, kind: 'recyclable' | 'special' | 'notRecy
 }
 
 export default function ScanScreen() {
-  const cameraRef = useRef<Camera | null>(null);
-  const [cameraPermission, requestCameraPermission] = Camera.useCameraPermissions();
+  const cameraRef = useRef<CameraView | null>(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
   const [zipCode, setZipCode] = useState('');
   const [locationText, setLocationText] = useState('unknown');
@@ -288,12 +289,11 @@ export default function ScanScreen() {
 
           {Platform.OS !== 'web' ? (
             <ThemedView style={styles.cameraSection}>
-              <Camera
+              <CameraView
                 ref={cameraRef}
                 style={styles.camera}
-                type={CameraType.back}
-                ratio="16:9"
-              />
+                facing="back"
+/>
               <Pressable style={styles.scanButton} onPress={handleScan} disabled={isLoading || !cameraPermission?.granted}>
                 <ThemedText type="linkPrimary">{isLoading ? 'Scanning…' : 'Scan item'}</ThemedText>
               </Pressable>
