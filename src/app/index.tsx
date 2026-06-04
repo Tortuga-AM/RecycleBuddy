@@ -1,5 +1,6 @@
 import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { Link } from 'expo-router';
+import { Platform, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedIcon } from '@/components/animated-icon';
@@ -53,6 +54,11 @@ export default function HomeScreen() {
             title="Fresh start"
             hint={<ThemedText type="code">npm run reset-project</ThemedText>}
           />
+          <Link href="/scan" asChild>
+            <Pressable style={styles.scanLink}>
+              <ThemedText type="linkPrimary">Go to the recycle scanner</ThemedText>
+            </Pressable>
+          </Link>
         </ThemedView>
 
         {Platform.OS === 'web' && <WebBadge />}
