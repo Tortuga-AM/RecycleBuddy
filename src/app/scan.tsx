@@ -1,11 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as mobilenet from '@tensorflow-models/mobilenet';
-import * as tf from '@tensorflow/tfjs';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-//import '@tensorflow/tfjs-react-native';
-import { decodeJpeg } from '@tensorflow/tfjs-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -13,32 +9,11 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 
-
 const STORAGE_KEY = '@recyclebuddy/stats';
 const ZIP_CODE_STORAGE_KEY = '@recyclebuddy/zipCode';
-const EARTH911_API_KEY = ''; // set your Earth911 API key here for location-based recycling lookup
+const EARTH911_API_KEY = '';
 const EARTH911_BASE_URL = 'https://api.earth911.com/earth911';
-
-const recyclableKeywords = [
-  'paper',
-  'cardboard',
-  'plastic',
-  'glass',
-  'metal',
-  'can',
-  'bottle',
-  'jar',
-  'box',
-  'carton',
-  'aluminum',
-  'steel',
-  'tin',
-  'paperboard',
-  'magazine',
-  'carton',
-];
-
-const specialDisposalKeywords = ['battery', 'mattress', 'electronics', 'paint', 'hazardous', 'chemical', 'oil', 'phone', 'tv', 'computer'];
+const GEMINI_API_KEY = 'AQ.Ab8RN6LUtkszEnpC0tVB2NISpGEabrsFeT6K3ZnYRLQOhnGCnQ';
 
 const defaultWeights: Record<string, number> = {
   bottle: 0.25,
@@ -62,34 +37,13 @@ function estimateWeight(label: string) {
   return 0.5;
 }
 
-function normalizeLabel(label: string) {
-  return label.split(',')[0].trim().toLowerCase();
-}
-
-function buildMaterialQuery(label: string) {
-  return encodeURIComponent(normalizeLabel(label));
-}
-
 async function fetchNearestSites(zipCode: string) {
-  if (!EARTH911_API_KEY) {
-    return [];
-  }
+  if (!EARTH911_API_KEY) return [];
   const url = `${EARTH911_BASE_URL}.searchLocations?api_key=${EARTH911_API_KEY}&postal_code=${zipCode}&country=US&max_distance=50`;
   const response = await fetch(url);
   const json = await response.json();
   const rawLocations = json?.result?.locations ?? [];
   return Array.isArray(rawLocations) ? rawLocations.slice(0, 5) : [];
-}
-
-async function fetchRecyclingGuidance(label: string, zipCode: string) {
-  if (!EARTH911_API_KEY) {
-    return null;
-  }
-  const query = buildMaterialQuery(label);
-  const url = `${EARTH911_BASE_URL}.searchMaterials?api_key=${EARTH911_API_KEY}&query=${query}`;
-  const response = await fetch(url);
-  const json = await response.json();
-  return json?.result || null;
 }
 
 function explainWhyText(label: string, kind: 'recyclable' | 'special' | 'notRecyclable') {
@@ -104,12 +58,10 @@ function explainWhyText(label: string, kind: 'recyclable' | 'special' | 'notRecy
 
 export default function ScanScreen() {
   const cameraRef = useRef<CameraView | null>(null);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraPermission] = useCameraPermissions();
   const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
   const [zipCode, setZipCode] = useState('');
-  const [locationText, setLocationText] = useState('unknown');
   const [isLoading, setIsLoading] = useState(false);
-  const [modelReady, setModelReady] = useState(false);
   const [predictLabel, setPredictLabel] = useState('');
   const [predictConfidence, setPredictConfidence] = useState(0);
   const [recycleStatus, setRecycleStatus] = useState<'recyclable' | 'special' | 'notRecyclable' | ''>('');
@@ -117,14 +69,11 @@ export default function ScanScreen() {
   const [nearestSites, setNearestSites] = useState<any[]>([]);
   const [stats, setStats] = useState({ count: 0, weight: 0 });
   const [explanation, setExplanation] = useState('');
-  const [model, setModel] = useState<mobilenet.MobileNet | null>(null);
 
   const loadZipCode = useCallback(async () => {
     try {
       const stored = await AsyncStorage.getItem(ZIP_CODE_STORAGE_KEY);
-      if (stored) {
-        setZipCode(stored);
-      }
+      if (stored) setZipCode(stored);
     } catch (error) {
       console.warn('Failed to load zip code', error);
     }
@@ -133,27 +82,9 @@ export default function ScanScreen() {
   const loadStats = useCallback(async () => {
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setStats(JSON.parse(stored));
-      }
+      if (stored) setStats(JSON.parse(stored));
     } catch (error) {
       console.warn('Failed to load stats', error);
-    }
-  }, []);
-
-  const loadModel = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      await tf.ready();
-      const loadedModel = await mobilenet.load();
-      setModel(loadedModel);
-      setModelReady(true);
-      setHint('Model loaded. Point the camera at the item and press Scan.');
-    } catch (error) {
-      console.warn('Model loading failed', error);
-      setHint('Object recognition is not available yet. Use a clear label or angle.');
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
@@ -167,19 +98,16 @@ export default function ScanScreen() {
         return;
       }
       const currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
-      setLocationText(`Latitude ${currentLocation.coords.latitude.toFixed(3)}, Longitude ${currentLocation.coords.longitude.toFixed(3)}`);
       if (!zipCode) {
         const reverse = await Location.reverseGeocodeAsync(currentLocation.coords);
         const postal = reverse?.[0]?.postalCode;
-        if (postal) { setZipCode(postal); }
+        if (postal) setZipCode(postal);
       }
     }
-
     loadZipCode();
     requestPermissions();
     loadStats();
-    loadModel();
-  }, [loadZipCode, zipCode, loadStats, loadModel]);
+  }, [loadZipCode, loadStats]);
 
   const saveStats = useCallback(async (nextStats: typeof stats) => {
     setStats(nextStats);
@@ -191,50 +119,63 @@ export default function ScanScreen() {
   }, []);
 
   const classifyImage = useCallback(async (uri: string) => {
-    if (!model) {
-      return [];
-    }
     const response = await fetch(uri);
     const buffer = await response.arrayBuffer();
-    const imageTensor = decodeJpeg(new Uint8Array(buffer));
-    const predictions = await model.classify(imageTensor);
-    imageTensor.dispose();
-    return predictions;
-  }, [model]);
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+
+    const result = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: 'Identify the main object in this image. Respond with JSON only, no markdown: {"label": "object name", "recyclable": true/false, "special": true/false, "confidence": 0.0-1.0, "reason": "brief reason"}' },
+              { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+            ]
+          }]
+        })
+      }
+    );
+
+    const json = await result.json();
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    return JSON.parse(text);
+  }, []);
 
   const handleScan = useCallback(async () => {
-    if (!cameraRef.current) {
-      return;
-    }
+    if (!cameraRef.current) return;
 
     setIsLoading(true);
     setExplanation('');
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.6, skipProcessing: true });
-      const predictions = await classifyImage(photo.uri);
-      const best = predictions?.[0];
-      if (!best || best.probability < 0.35) {
-        setHint('Try a different angle, make sure the item label is visible, or try again with better lighting.');
+      const result = await classifyImage(photo.uri);
+
+      if (!result || result.confidence < 0.35) {
+        setHint('Try a different angle, make sure the item is clearly visible, or try again with better lighting.');
         setPredictLabel('Unknown item');
-        setPredictConfidence(best?.probability ?? 0);
+        setPredictConfidence(result?.confidence ?? 0);
         setRecycleStatus('notRecyclable');
         return;
       }
 
-      const normalized = normalizeLabel(best.className);
-      setPredictLabel(normalized);
-      setPredictConfidence(best.probability);
+      setPredictLabel(result.label);
+      setPredictConfidence(result.confidence);
 
-      const special = specialDisposalKeywords.some((keyword) => normalized.includes(keyword));
-      const recyclable = recyclableKeywords.some((keyword) => normalized.includes(keyword));
-      const status = special ? 'special' : recyclable ? 'recyclable' : 'notRecyclable';
+      const status = result.special ? 'special' : result.recyclable ? 'recyclable' : 'notRecyclable';
       setRecycleStatus(status);
-      setHint(status === 'recyclable' ? 'This looks recyclable. Tap Explain why for more details.' : special ? 'This item may need special disposal. Find a nearby center.' : 'This item may not be accepted for curbside recycling.');
+      setHint(
+        status === 'recyclable' ? 'This looks recyclable. Tap Explain why for more details.' :
+        status === 'special' ? 'This item may need special disposal. Find a nearby center.' :
+        'This item may not be accepted for curbside recycling.'
+      );
 
       if (status !== 'notRecyclable') {
         const nextStats = {
           count: stats.count + 1,
-          weight: Math.round((stats.weight + estimateWeight(normalized)) * 100) / 100,
+          weight: Math.round((stats.weight + estimateWeight(result.label)) * 100) / 100,
         };
         saveStats(nextStats);
       }
@@ -252,16 +193,12 @@ export default function ScanScreen() {
   }, [classifyImage, saveStats, stats, zipCode]);
 
   const handleExplain = useCallback(() => {
-    if (!predictLabel || !recycleStatus) {
-      return;
-    }
+    if (!predictLabel || !recycleStatus) return;
     setExplanation(explainWhyText(predictLabel, recycleStatus));
   }, [predictLabel, recycleStatus]);
 
   const nearestSiteText = useMemo(() => {
-    if (!nearestSites.length) {
-      return 'No nearby recycling sites found yet. Enter your zip code and scan an item.';
-    }
+    if (!nearestSites.length) return 'No nearby recycling sites found yet.';
     return nearestSites
       .map((site, index) => {
         const title = site.name ?? site.description ?? `Site ${index + 1}`;
@@ -281,23 +218,16 @@ export default function ScanScreen() {
 
           {Platform.OS !== 'web' ? (
             <ThemedView style={styles.cameraSection}>
-              <CameraView
-                ref={cameraRef}
-                style={styles.camera}
-                facing="back"
-/>
-              <Pressable style={styles.scanButton} onPress={handleScan} disabled={isLoading || !cameraPermission?.granted || !zipCode}>
-                <ThemedText type="linkPrimary" style={styles.scanButtonText}>{isLoading ? 'Scanning…' : 'Scan item'}</ThemedText>
-              </Pressable>
-              {!zipCode ? (
-                <ThemedText type="small" themeColor="textSecondary" style={styles.scanHint}>
-                  Enter your zip code first so the app can show local recycling centers.
+              <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+              <Pressable style={styles.scanButton} onPress={handleScan} disabled={isLoading || !cameraPermission?.granted}>
+                <ThemedText type="linkPrimary" style={styles.scanButtonText}>
+                  {isLoading ? 'Scanning…' : 'Scan item'}
                 </ThemedText>
-              ) : null}
+              </Pressable>
             </ThemedView>
           ) : (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="small">Camera scanning is not supported on web in this build. Use the native app experience to scan items.</ThemedText>
+              <ThemedText type="small">Camera scanning is not supported on web.</ThemedText>
             </ThemedView>
           )}
 
@@ -307,7 +237,9 @@ export default function ScanScreen() {
             {predictLabel ? (
               <>
                 <ThemedText type="small">Confidence: {(predictConfidence * 100).toFixed(0)}%</ThemedText>
-                <ThemedText type="small">Status: {recycleStatus === 'recyclable' ? 'Recyclable' : recycleStatus === 'special' ? 'Special recycling required' : 'Not recyclable'}</ThemedText>
+                <ThemedText type="small">
+                  Status: {recycleStatus === 'recyclable' ? 'Recyclable' : recycleStatus === 'special' ? 'Special recycling required' : 'Not recyclable'}
+                </ThemedText>
                 <Pressable style={styles.explainButton} onPress={handleExplain}>
                   <ThemedText type="linkPrimary">Explain why</ThemedText>
                 </Pressable>
@@ -325,17 +257,11 @@ export default function ScanScreen() {
             <ThemedText type="subtitle">Recycling game</ThemedText>
             <ThemedText type="small">Items recycled: {stats.count}</ThemedText>
             <ThemedText type="small">Estimated weight saved: {stats.weight.toFixed(2)} kg</ThemedText>
-            <ThemedText type="small">
-              Keep scanning items to grow your recycling streak.
-            </ThemedText>
           </ThemedView>
 
           <ThemedView style={styles.hintSection}>
             <ThemedText type="smallBold">Hint</ThemedText>
             <ThemedText type="small">{hint}</ThemedText>
-            {!EARTH911_API_KEY ? (
-              <ThemedText type="small">Set an Earth911 API key in src/app/scan.tsx to enable live site lookup.</ThemedText>
-            ) : null}
           </ThemedView>
         </ScrollView>
       </SafeAreaView>
@@ -344,41 +270,19 @@ export default function ScanScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  scrollView: { flex: 1 },
   contentContainer: {
     paddingHorizontal: Spacing.four,
     paddingBottom: BottomTabInset + Spacing.four,
     alignItems: 'center',
     gap: Spacing.four,
   },
-  heading: {
-    marginTop: Spacing.four,
-    textAlign: 'center',
-  },
-  card: {
-    width: '100%',
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
-  },
-  cameraSection: {
-    width: '100%',
-    alignItems: 'center',
-    gap: Spacing.three,
-  },
-  camera: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    borderRadius: Spacing.four,
-    overflow: 'hidden',
-  },
+  heading: { marginTop: Spacing.four, textAlign: 'center' },
+  card: { width: '100%', padding: Spacing.four, borderRadius: Spacing.four },
+  cameraSection: { width: '100%', alignItems: 'center', gap: Spacing.three },
+  camera: { width: '100%', aspectRatio: 16 / 9, borderRadius: Spacing.four, overflow: 'hidden' },
   scanButton: {
     alignSelf: 'stretch',
     backgroundColor: '#cce4ff',
@@ -386,10 +290,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     alignItems: 'center',
   },
-  scanButtonText: {
-    color: '#000',
-    fontWeight: '700',
-  },
+  scanButtonText: { color: '#000', fontWeight: '700' },
   explainButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#1c7c54',
@@ -398,10 +299,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     marginTop: Spacing.two,
   },
-  fieldRow: {
-    marginTop: Spacing.three,
-    marginBottom: Spacing.two,
-  },
+  hintSection: { width: '100%', padding: Spacing.four, borderRadius: Spacing.four },
+  scanHint: { marginTop: Spacing.two },
+  fieldRow: { marginTop: Spacing.three, marginBottom: Spacing.two },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
@@ -417,13 +317,5 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.four,
     backgroundColor: '#cce4ff',
     alignItems: 'center',
-  },
-  scanHint: {
-    marginTop: Spacing.two,
-  },
-  hintSection: {
-    width: '100%',
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
   },
 });
