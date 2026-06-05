@@ -1,4 +1,5 @@
 import { Link } from 'expo-router';
+import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -36,7 +37,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <Link href="/scan" asChild>
+      <Link href="/zipcode" asChild>
         <Pressable style={styles.button}>
           <Text style={styles.buttonText}>Start Scanning</Text>
         </Pressable>

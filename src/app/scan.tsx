@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as mobilenet from '@tensorflow-models/mobilenet';
 import * as tf from '@tensorflow/tfjs';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 //import '@tensorflow/tfjs-react-native';
 import { decodeJpeg } from '@tensorflow/tfjs-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -15,6 +15,7 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 
 
 const STORAGE_KEY = '@recyclebuddy/stats';
+const ZIP_CODE_STORAGE_KEY = '@recyclebuddy/zipCode';
 const EARTH911_API_KEY = ''; // set your Earth911 API key here for location-based recycling lookup
 const EARTH911_BASE_URL = 'https://api.earth911.com/earth911';
 
@@ -118,27 +119,15 @@ export default function ScanScreen() {
   const [explanation, setExplanation] = useState('');
   const [model, setModel] = useState<mobilenet.MobileNet | null>(null);
 
-  useEffect(() => {
-    async function requestPermissions() {
-      const locationPermissionResponse = await Location.requestForegroundPermissionsAsync();
-      setLocationPermission(locationPermissionResponse.status === 'granted');
-      if (locationPermissionResponse.status !== 'granted') {
-        setHint('Location permission is required to find nearby recycling centers.');
-        return;
+  const loadZipCode = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem(ZIP_CODE_STORAGE_KEY);
+      if (stored) {
+        setZipCode(stored);
       }
-      const currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
-      const postalCode = currentLocation?.coords ? zipCode || 'unknown' : 'unknown';
-      setLocationText(`Latitude ${currentLocation.coords.latitude.toFixed(3)}, Longitude ${currentLocation.coords.longitude.toFixed(3)}`);
-      if (!zipCode) {
-        const reverse = await Location.reverseGeocodeAsync(currentLocation.coords);
-        const postal = reverse?.[0]?.postalCode;
-        if (postal) { setZipCode(postal); }
-      }
+    } catch (error) {
+      console.warn('Failed to load zip code', error);
     }
-
-    requestPermissions();
-    loadStats();
-    loadModel();
   }, []);
 
   const loadStats = useCallback(async () => {
@@ -149,15 +138,6 @@ export default function ScanScreen() {
       }
     } catch (error) {
       console.warn('Failed to load stats', error);
-    }
-  }, []);
-
-  const saveStats = useCallback(async (nextStats: typeof stats) => {
-    setStats(nextStats);
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextStats));
-    } catch (error) {
-      console.warn('Failed to save stats', error);
     }
   }, []);
 
@@ -174,6 +154,39 @@ export default function ScanScreen() {
       setHint('Object recognition is not available yet. Use a clear label or angle.');
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    async function requestPermissions() {
+      const locationPermissionResponse = await Location.requestForegroundPermissionsAsync();
+      const granted = locationPermissionResponse.status === 'granted';
+      setLocationPermission(granted);
+      if (!granted) {
+        setHint('Location permission is required to find nearby recycling centers.');
+        return;
+      }
+      const currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+      setLocationText(`Latitude ${currentLocation.coords.latitude.toFixed(3)}, Longitude ${currentLocation.coords.longitude.toFixed(3)}`);
+      if (!zipCode) {
+        const reverse = await Location.reverseGeocodeAsync(currentLocation.coords);
+        const postal = reverse?.[0]?.postalCode;
+        if (postal) { setZipCode(postal); }
+      }
+    }
+
+    loadZipCode();
+    requestPermissions();
+    loadStats();
+    loadModel();
+  }, [loadZipCode, zipCode, loadStats, loadModel]);
+
+  const saveStats = useCallback(async (nextStats: typeof stats) => {
+    setStats(nextStats);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextStats));
+    } catch (error) {
+      console.warn('Failed to save stats', error);
     }
   }, []);
 
@@ -266,27 +279,6 @@ export default function ScanScreen() {
             Recycle Scanner
           </ThemedText>
 
-          <ThemedView type="backgroundElement" style={styles.card}>
-            <ThemedText type="subtitle">Step 1: Enable location</ThemedText>
-            <ThemedText type="small">Location helps find nearby recycling centers, special disposal sites, and local recycling protocols for your area.</ThemedText>
-            <ThemedText type="smallBold">Status:</ThemedText>
-            <ThemedText type="small">{locationPermission ? 'Enabled' : 'Not enabled'}</ThemedText>
-            <ThemedText type="smallBold">Current position:</ThemedText>
-            <ThemedText type="small">{locationText}</ThemedText>
-            <View style={styles.fieldRow}>
-              <TextInput
-                value={zipCode}
-                onChangeText={setZipCode}
-                placeholder="Zip code"
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </View>
-            <ThemedText type="small" themeColor="textSecondary">
-              The app can use your zip code to look up nearby recycling centers and the specific recycling protocols in your area.
-            </ThemedText>
-          </ThemedView>
-
           {Platform.OS !== 'web' ? (
             <ThemedView style={styles.cameraSection}>
               <CameraView
@@ -294,9 +286,14 @@ export default function ScanScreen() {
                 style={styles.camera}
                 facing="back"
 />
-              <Pressable style={styles.scanButton} onPress={handleScan} disabled={isLoading || !cameraPermission?.granted}>
+              <Pressable style={styles.scanButton} onPress={handleScan} disabled={isLoading || !cameraPermission?.granted || !zipCode}>
                 <ThemedText type="linkPrimary" style={styles.scanButtonText}>{isLoading ? 'Scanning…' : 'Scan item'}</ThemedText>
               </Pressable>
+              {!zipCode ? (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.scanHint}>
+                  Enter your zip code first so the app can show local recycling centers.
+                </ThemedText>
+              ) : null}
             </ThemedView>
           ) : (
             <ThemedView type="backgroundElement" style={styles.card}>
@@ -412,6 +409,17 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     color: '#000',
     backgroundColor: '#fff',
+  },
+  linkButton: {
+    marginTop: Spacing.three,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    borderRadius: Spacing.four,
+    backgroundColor: '#cce4ff',
+    alignItems: 'center',
+  },
+  scanHint: {
+    marginTop: Spacing.two,
   },
   hintSection: {
     width: '100%',
