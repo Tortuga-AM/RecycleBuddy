@@ -9,7 +9,12 @@
     "scheme": "recyclebuddy",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "RecycleBuddy uses your location to find nearby recycling centers.",
+        "NSLocationAlwaysUsageDescription": "RecycleBuddy uses your location to find nearby recycling centers.",
+        "NSCameraUsageDescription": "RecycleBuddy uses your camera to scan items for recycling."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +24,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.RecycleBuddy"
+      "package": "com.anonymous.RecycleBuddy",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
+      ]
     },
     "web": {
       "output": "static",
@@ -35,6 +45,18 @@
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
           }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "RecycleBuddy uses your location to find nearby recycling centers."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "RecycleBuddy uses your camera to scan items for recycling."
         }
       ]
     ],
