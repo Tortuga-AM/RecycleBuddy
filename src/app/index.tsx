@@ -24,7 +24,7 @@ export default function HomeScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>📍 Location</Text>
           <Text style={styles.cardText}>
-            We'll use your location to find the nearest recycling centers for items that need special disposal.
+            We'll use your location to find the nearest recycling centers for items that need special disposal and to find out your counties regulations around recycling.
           </Text>
         </View>
 

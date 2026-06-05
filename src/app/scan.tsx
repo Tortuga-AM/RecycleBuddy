@@ -268,7 +268,7 @@ export default function ScanScreen() {
 
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="subtitle">Step 1: Enable location</ThemedText>
-            <ThemedText type="small">Location helps find nearby recycling centers and special disposal sites.</ThemedText>
+            <ThemedText type="small">Location helps find nearby recycling centers, special disposal sites, and local recycling protocols for your area.</ThemedText>
             <ThemedText type="smallBold">Status:</ThemedText>
             <ThemedText type="small">{locationPermission ? 'Enabled' : 'Not enabled'}</ThemedText>
             <ThemedText type="smallBold">Current position:</ThemedText>
@@ -283,7 +283,7 @@ export default function ScanScreen() {
               />
             </View>
             <ThemedText type="small" themeColor="textSecondary">
-              The app can use your zip code to look up the nearest Earth911 recycling centers.
+              The app can use your zip code to look up nearby recycling centers and the specific recycling protocols in your area.
             </ThemedText>
           </ThemedView>
 
@@ -295,7 +295,7 @@ export default function ScanScreen() {
                 facing="back"
 />
               <Pressable style={styles.scanButton} onPress={handleScan} disabled={isLoading || !cameraPermission?.granted}>
-                <ThemedText type="linkPrimary">{isLoading ? 'Scanning…' : 'Scan item'}</ThemedText>
+                <ThemedText type="linkPrimary" style={styles.scanButtonText}>{isLoading ? 'Scanning…' : 'Scan item'}</ThemedText>
               </Pressable>
             </ThemedView>
           ) : (
@@ -384,10 +384,14 @@ const styles = StyleSheet.create({
   },
   scanButton: {
     alignSelf: 'stretch',
-    backgroundColor: '#007aff',
+    backgroundColor: '#cce4ff',
     borderRadius: Spacing.four,
     paddingVertical: Spacing.three,
     alignItems: 'center',
+  },
+  scanButtonText: {
+    color: '#000',
+    fontWeight: '700',
   },
   explainButton: {
     alignSelf: 'flex-start',
