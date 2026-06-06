@@ -129,14 +129,14 @@ export default function ScanScreen() {
     const base64 = btoa(binary);
 
     const result = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [
-              { text: 'Identify the main object in this image. Respond with JSON only, no markdown: {"label": "object name", "recyclable": true/false, "special": true/false, "confidence": 0.0-1.0, "reason": "brief reason"}' },
+              { text: 'Identify the main object in this image. Respond with JSON only: {"label": "object name", "recyclable": true/false, "special": true/false, "confidence": 0.0-1.0, "reason": "brief reason and proper disposal technique/location"}' },
               { inline_data: { mime_type: 'image/jpeg', data: base64 } }
             ]
           }]
@@ -145,9 +145,32 @@ export default function ScanScreen() {
     );
 
     const json = await result.json();
+    
+    // If the API returned an error block, log it directly
+    if (json.error) {
+      console.error('Gemini API Error details:', JSON.stringify(json.error, null, 2));
+      throw new Error(`Gemini API Error: ${json.error.message}`);
+    }
+
     const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-    return JSON.parse(text);
+
+    if (!text) {
+      // If there is no text but no explicit error, check if it was blocked by safety filters
+      console.warn('Full Gemini Response object:', JSON.stringify(json, null, 2));
+      throw new Error('No text returned from Gemini API');
+    }
+
+    // Clean markdown blocks if the model accidentally includes them
+    const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    try {
+      return JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.warn("Failed to parse cleaned text:", cleanedText);
+      throw parseError;
+    }
   }, []);
+
 
   const handleScan = useCallback(async () => {
     if (!cameraRef.current) return;

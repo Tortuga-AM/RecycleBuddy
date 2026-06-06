@@ -14,7 +14,8 @@
         "NSLocationWhenInUseUsageDescription": "RecycleBuddy uses your location to find nearby recycling centers.",
         "NSLocationAlwaysUsageDescription": "RecycleBuddy uses your location to find nearby recycling centers.",
         "NSCameraUsageDescription": "RecycleBuddy uses your camera to scan items for recycling."
-      }
+      },
+      "bundleIdentifier": "com.anonymous.RecycleBuddy"
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +29,11 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "CAMERA"
+        "CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -58,8 +63,7 @@
         {
           "cameraPermission": "RecycleBuddy uses your camera to scan items for recycling."
         }
-      ],
-      "expo-image"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
