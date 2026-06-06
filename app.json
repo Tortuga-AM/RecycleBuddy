@@ -58,7 +58,8 @@
         {
           "cameraPermission": "RecycleBuddy uses your camera to scan items for recycling."
         }
-      ]
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

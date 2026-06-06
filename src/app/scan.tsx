@@ -121,7 +121,12 @@ export default function ScanScreen() {
   const classifyImage = useCallback(async (uri: string) => {
     const response = await fetch(uri);
     const buffer = await response.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
 
     const result = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
