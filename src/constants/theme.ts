@@ -1,28 +1,45 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import '@/global.css';
 
 import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-    tint: '#007aff',
+    text: '#1A1A2E',
+    background: '#F8F9FA',
+    backgroundElement: '#FFFFFF',
+    backgroundSelected: '#E8F5E9',
+    textSecondary: '#6B7280',
+    tint: '#2E7D32',
+    primary: '#2E7D32',
+    primaryLight: '#4CAF50',
+    primaryDark: '#1B5E20',
+    accent: '#FF8F00',
+    accentLight: '#FFB300',
+    success: '#2E7D32',
+    warning: '#FF8F00',
+    error: '#C62828',
+    special: '#E65100',
+    notRecyclable: '#C62828',
+    recyclable: '#2E7D32',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-    tint: '#0a84ff',
+    text: '#E8E8E8',
+    background: '#121212',
+    backgroundElement: '#1E1E1E',
+    backgroundSelected: '#1B3A1D',
+    textSecondary: '#9CA3AF',
+    tint: '#4CAF50',
+    primary: '#4CAF50',
+    primaryLight: '#66BB6A',
+    primaryDark: '#2E7D32',
+    accent: '#FFB300',
+    accentLight: '#FFD54F',
+    success: '#4CAF50',
+    warning: '#FFB300',
+    error: '#EF5350',
+    special: '#FF9800',
+    notRecyclable: '#EF5350',
+    recyclable: '#4CAF50',
   },
 } as const;
 
@@ -30,13 +47,9 @@ export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
@@ -65,3 +78,25 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+export const defaultWeights: Record<string, number> = {
+  bottle: 0.25,
+  can: 0.03,
+  paper: 0.12,
+  cardboard: 0.5,
+  glass: 0.35,
+  plastic: 0.18,
+  mattress: 18,
+  battery: 0.2,
+  electronics: 2,
+};
+
+export function estimateWeight(label: string) {
+  const lower = label.toLowerCase();
+  for (const key of Object.keys(defaultWeights)) {
+    if (lower.includes(key)) {
+      return defaultWeights[key];
+    }
+  }
+  return 0.5;
+}
