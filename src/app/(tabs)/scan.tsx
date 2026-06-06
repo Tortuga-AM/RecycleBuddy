@@ -20,7 +20,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, Colors, estimateWeight } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { useRouter } from 'expo-router';
 
 interface ClassificationResult {
   label: string;
@@ -41,6 +40,7 @@ interface DisposalSite {
   distance?: number;
   phone?: string;
   url?: string;
+  category?: string;
 }
 
 function explainWhyText(label: string, kind: 'recyclable' | 'special' | 'notRecyclable') {
@@ -58,7 +58,6 @@ export default function ScanTab() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { user } = useAuth();
   const theme = useTheme();
-  const router = useRouter();
 
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ClassificationResult | null>(null);
@@ -69,7 +68,6 @@ export default function ScanTab() {
   const [loadingSites, setLoadingSites] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [zipCode, setZipCode] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -77,9 +75,6 @@ export default function ScanTab() {
       if (status !== 'granted') return;
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-      const rev = await Location.reverseGeocodeAsync(loc.coords);
-      const postal = rev?.[0]?.postalCode;
-      if (postal) setZipCode(postal);
     })();
   }, []);
 
@@ -102,12 +97,24 @@ export default function ScanTab() {
     return data as ClassificationResult;
   }, []);
 
-  const fetchDisposalSites = useCallback(async (zc: string) => {
-    if (!zc) return;
+  const fetchDisposalSites = useCallback(async (label: string) => {
+    if (!userLocation) return;
     setLoadingSites(true);
     try {
+      let category: string | undefined;
+      const lower = label.toLowerCase();
+      if (lower.includes('battery') || lower.includes('electronic') || lower.includes('e-waste')) {
+        category = 'electronics';
+      } else if (lower.includes('paint') || lower.includes('oil') || lower.includes('chemical') || lower.includes('hazardous')) {
+        category = 'household_hazardous';
+      }
       const { data, error } = await supabase.functions.invoke('find-sites', {
-        body: { zipCode: zc },
+        body: {
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+          radiusKm: 25,
+          category,
+        },
       });
       if (!error && data?.sites) {
         setDisposalSites(data.sites);
@@ -115,7 +122,7 @@ export default function ScanTab() {
     } finally {
       setLoadingSites(false);
     }
-  }, []);
+  }, [userLocation]);
 
   const saveScan = useCallback(async (cls: ClassificationResult, status: string) => {
     if (!user) return;
@@ -155,15 +162,15 @@ export default function ScanTab() {
 
       await saveScan(cls, status);
 
-      if ((status === 'special' || status === 'notRecyclable') && zipCode) {
-        fetchDisposalSites(zipCode);
+      if ((status === 'special' || status === 'notRecyclable') && userLocation) {
+        fetchDisposalSites(cls.label);
       }
     } catch (error) {
       Alert.alert('Scan failed', 'Unable to classify the item. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [classifyImage, saveScan, fetchDisposalSites, zipCode]);
+  }, [classifyImage, saveScan, fetchDisposalSites, userLocation]);
 
   const handleExplain = useCallback(() => {
     if (!result || !recycleStatus) return;
@@ -336,25 +343,35 @@ export default function ScanTab() {
                       <ThemedText type="small" themeColor="textSecondary">
                         {[site.address, site.city, site.state, site.postal_code].filter(Boolean).join(', ')}
                       </ThemedText>
+                      {site.category && (
+                        <ThemedText type="small" themeColor="textSecondary" style={{ fontStyle: 'italic' }}>
+                          Accepts: {site.category}
+                        </ThemedText>
+                      )}
                     </View>
-                    {site.distance != null && (
-                      <ThemedText type="small" themeColor="textSecondary">{site.distance.toFixed(1)} mi</ThemedText>
-                    )}
                   </View>
                 ))}
               </>
             ) : (
               <ThemedText type="small" themeColor="textSecondary">
-                {zipCode ? `No disposal sites found near ${zipCode}. Try a different zip code.` : 'Set your zip code to find nearby sites.'}
+                {userLocation ? 'No disposal sites found nearby. Try a wider search or check local resources.' : 'Enable location access to find nearby disposal sites.'}
               </ThemedText>
             )}
 
-            {!zipCode && (
+            {!userLocation && (
               <Pressable
                 style={[styles.zipButton, { backgroundColor: theme.primary }]}
-                onPress={() => router.push('/zipcode')}
+                onPress={async () => {
+                  const { status } = await Location.requestForegroundPermissionsAsync();
+                  if (status === 'granted') {
+                    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                    const newLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+                    setUserLocation(newLoc);
+                    if (result) fetchDisposalSites(result.label);
+                  }
+                }}
               >
-                <ThemedText type="smallBold" style={{ color: '#fff' }}>Set zip code</ThemedText>
+                <ThemedText type="smallBold" style={{ color: '#fff' }}>Enable location</ThemedText>
               </Pressable>
             )}
           </ThemedView>
