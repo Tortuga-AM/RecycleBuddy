@@ -11,19 +11,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
+  const inAuthGroup = segments[0] === '(auth)';
+
   useEffect(() => {
     if (loading) return;
-
-    const inAuthGroup = segments[0] === '(auth)';
 
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/signin');
     } else if (user && inAuthGroup) {
       router.replace('/(tabs)');
     }
-  }, [user, loading, segments]);
+  }, [user, loading, inAuthGroup]);
 
-  if (loading) {
+  if (loading || (!user && !inAuthGroup) || (user && inAuthGroup)) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.light.primary} />

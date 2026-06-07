@@ -6,6 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+const GEMINI_API_KEY_BACKUP = Deno.env.get("GEMINI_API_KEY_BACKUP") ?? "";
+
 interface Site {
   name: string;
   address?: string;
@@ -72,56 +75,95 @@ Deno.serve(async (req: Request) => {
 (
 ${filterUnion}
 );
-out body;
->;
-out skel qt;
+out center;
 `;
 
-    const overpassUrl = "https://overpass-api.de/api/interpreter";
-    const response = await fetch(overpassUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-    });
+    let sites: Site[] = [];
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("Overpass API error:", response.status, text);
-      return new Response(
-        JSON.stringify({ error: "Failed to query recycling locations", sites: [] }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // 1. Try Overpass API
+    try {
+      const overpassUrl = "https://overpass-api.de/api/interpreter";
+      const response = await fetch(overpassUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+
+      if (response.ok) {
+        const json = await response.json();
+        const elements = json?.elements ?? [];
+
+        sites = elements
+          .filter((el: Record<string, unknown>) => (el.lat && el.lon) || (el.center && typeof el.center === "object"))
+          .slice(0, 15)
+          .map((el: Record<string, unknown>) => {
+            const tags = (el.tags ?? {}) as Record<string, string>;
+            const name = tags.name || tags.operator || "Recycling Location";
+            const lat = (el.lat ?? (el.center as any)?.lat) as number;
+            const lon = (el.lon ?? (el.center as any)?.lon) as number;
+            const categoryParts: string[] = [];
+            for (const [k, v] of Object.entries(tags)) {
+              if (k.startsWith("recycling:") && v === "yes") {
+                categoryParts.push(k.replace("recycling:", "").replace(/_/g, " "));
+              }
+            }
+
+            return {
+              name,
+              address: tags["addr:street"] || tags["addr:housenumber"] ? [tags["addr:housenumber"], tags["addr:street"]].filter(Boolean).join(" ") : undefined,
+              city: tags["addr:city"],
+              state: tags["addr:state"],
+              postal_code: tags["addr:postcode"],
+              latitude: lat,
+              longitude: lon,
+              phone: tags.phone || tags["contact:phone"],
+              url: tags.website || tags["contact:website"],
+              category: categoryParts.length > 0 ? categoryParts.join(", ") : (tags.amenity || "recycling"),
+            };
+          });
+      }
+    } catch (e) {
+      console.error("Overpass query failed:", e);
     }
 
-    const json = await response.json();
-    const elements = json?.elements ?? [];
+    // 2. If Overpass returned 0 results or failed, use Gemini fallback!
+    if (sites.length === 0 && (GEMINI_API_KEY || GEMINI_API_KEY_BACKUP)) {
+      console.log("OSM returned 0 sites. Fetching fallback recommendations from Gemini...");
+      try {
+        const activeKey = GEMINI_API_KEY || GEMINI_API_KEY_BACKUP;
+        const categoryPrompt = category ? `specifically for disposing of "${category}" items` : "for recycling/disposing of household waste, recycling, or hazardous materials";
+        const geminiPrompt = `You are a helpful local recycling locator. Find 3 to 5 real recycling centers, drop-off locations, or waste management facilities near latitude ${latitude}, longitude ${longitude} ${categoryPrompt}. Provide actual addresses and estimate coordinates near the addresses. Return JSON only in this format: {"sites": [{"name": "Facility Name", "address": "123 Main St", "city": "City", "state": "State", "postal_code": "12345", "latitude": 0.0, "longitude": 0.0, "category": "electronics, paint, plastics, etc."}]}`;
 
-    const sites: Site[] = elements
-      .filter((el: Record<string, unknown>) => el.type === "node" && el.lat && el.lon)
-      .slice(0, 20)
-      .map((el: Record<string, unknown>) => {
-        const tags = (el.tags ?? {}) as Record<string, string>;
-        const name = tags.name || tags.operator || "Recycling Location";
-        const categoryParts: string[] = [];
-        for (const [k, v] of Object.entries(tags)) {
-          if (k.startsWith("recycling:") && v === "yes") {
-            categoryParts.push(k.replace("recycling:", "").replace(/_/g, " "));
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${activeKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{ text: geminiPrompt }]
+              }],
+              tools: [{ google_search: {} }]
+            })
+          }
+        );
+
+        if (geminiRes.ok) {
+          const geminiJson = await geminiRes.json();
+          const text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+            const parsed = JSON.parse(cleaned);
+            if (parsed && Array.isArray(parsed.sites)) {
+              sites = parsed.sites;
+              console.log(`Successfully loaded ${sites.length} fallback sites from Gemini.`);
+            }
           }
         }
-
-        return {
-          name,
-          address: tags["addr:street"] || tags["addr:housenumber"] ? [tags["addr:housenumber"], tags["addr:street"]].filter(Boolean).join(" ") : undefined,
-          city: tags["addr:city"],
-          state: tags["addr:state"],
-          postal_code: tags["addr:postcode"],
-          latitude: el.lat as number,
-          longitude: el.lon as number,
-          phone: tags.phone || tags["contact:phone"],
-          url: tags.website || tags["contact:website"],
-          category: categoryParts.length > 0 ? categoryParts.join(", ") : (tags.amenity || "recycling"),
-        };
-      });
+      } catch (geminiErr) {
+        console.error("Gemini fallback failed:", geminiErr);
+      }
+    }
 
     return new Response(
       JSON.stringify({ sites }),

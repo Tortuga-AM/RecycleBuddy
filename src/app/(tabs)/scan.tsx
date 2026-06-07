@@ -1,8 +1,21 @@
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { estimateWeight, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/providers/auth-provider';
+import { Ionicons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
+  Image,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -10,22 +23,17 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/providers/auth-provider';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing, Colors, estimateWeight } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+
+// Global Dimensions Setup (Prevents ReferenceErrors down-scope)
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface ClassificationResult {
   label: string;
   recyclable: boolean;
   special: boolean;
   confidence: number;
+  weight_estimate?: number;
   reason: string;
 }
 
@@ -43,6 +51,8 @@ interface DisposalSite {
   category?: string;
 }
 
+type RecycleStatus = 'recyclable' | 'special' | 'notRecyclable' | '';
+
 function explainWhyText(label: string, kind: 'recyclable' | 'special' | 'notRecyclable') {
   if (kind === 'recyclable') {
     return `A ${label} is usually recyclable because it is made from materials like paper, glass, plastic, or metal that recycling programs can process. Keeping it out of the trash helps reduce pollution and save energy.`;
@@ -58,25 +68,69 @@ export default function ScanTab() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { user } = useAuth();
   const theme = useTheme();
+  const scanAnimValue = useRef(new Animated.Value(0)).current;
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [result, setResult] = useState<ClassificationResult | null>(null);
-  const [recycleStatus, setRecycleStatus] = useState<'recyclable' | 'special' | 'notRecyclable' | ''>('');
+  const [recycleStatus, setRecycleStatus] = useState<RecycleStatus>('');
   const [explanation, setExplanation] = useState('');
   const [showExplanation, setShowExplanation] = useState(false);
   const [disposalSites, setDisposalSites] = useState<DisposalSite[]>([]);
   const [loadingSites, setLoadingSites] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [zipCode, setZipCode] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      let loc = await Location.getLastKnownPositionAsync();
+      if (!loc) {
+        loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      }
       setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
     })();
   }, []);
+
+  const loadZipCode = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('zip_code')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (data?.zip_code) {
+      setZipCode(data.zip_code);
+    } else {
+      setZipCode(null);
+    }
+  }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadZipCode();
+    }, [loadZipCode])
+  );
+
+  // Smooth looping animation for AI fluid background track
+  useEffect(() => {
+    if (isLoading) {
+      scanAnimValue.setValue(0);
+      Animated.loop(
+        Animated.timing(scanAnimValue, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      scanAnimValue.stopAnimation();
+      scanAnimValue.setValue(0);
+    }
+  }, [isLoading, scanAnimValue]);
 
   const classifyImage = useCallback(async (uri: string): Promise<ClassificationResult> => {
     const response = await fetch(uri);
@@ -89,13 +143,13 @@ export default function ScanTab() {
     const base64 = btoa(binary);
 
     const { data, error } = await supabase.functions.invoke('classify-item', {
-      body: { imageBase64: base64 },
+      body: { imageBase64: base64, zipCode },
     });
 
     if (error) throw new Error(error.message);
     if (data?.error) throw new Error(data.error);
     return data as ClassificationResult;
-  }, []);
+  }, [zipCode]);
 
   const fetchDisposalSites = useCallback(async (label: string) => {
     if (!userLocation) return;
@@ -126,7 +180,7 @@ export default function ScanTab() {
 
   const saveScan = useCallback(async (cls: ClassificationResult, status: string) => {
     if (!user) return;
-    const weight = estimateWeight(cls.label);
+    const weight = cls.weight_estimate ?? estimateWeight(cls.label);
     await supabase.from('scan_history').insert({
       user_id: user.id,
       label: cls.label,
@@ -148,17 +202,26 @@ export default function ScanTab() {
 
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.6, skipProcessing: true });
+      if (!photo) throw new Error("Capture failed");
+
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setCapturedPhoto(photo.uri);
+
       const cls = await classifyImage(photo.uri);
 
       if (!cls || cls.confidence < 0.35) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setResult({ label: 'Unknown item', recyclable: false, special: false, confidence: cls?.confidence ?? 0, reason: 'Could not identify the item clearly.' });
         setRecycleStatus('notRecyclable');
+        setIsExpanded(false);
         return;
       }
 
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setResult(cls);
       const status = cls.special ? 'special' : cls.recyclable ? 'recyclable' : 'notRecyclable';
       setRecycleStatus(status);
+      setIsExpanded(false);
 
       await saveScan(cls, status);
 
@@ -167,10 +230,39 @@ export default function ScanTab() {
       }
     } catch (error) {
       Alert.alert('Scan failed', 'Unable to classify the item. Please try again.');
+      setCapturedPhoto(null);
+      setIsExpanded(true);
     } finally {
       setIsLoading(false);
     }
   }, [classifyImage, saveScan, fetchDisposalSites, userLocation]);
+
+  const handleScanAnother = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setResult(null);
+    setRecycleStatus('');
+    setCapturedPhoto(null);
+    setIsExpanded(true);
+    setShowExplanation(false);
+    setShowMap(false);
+    setDisposalSites([]);
+  }, []);
+
+  const handleWebSimulate = useCallback(async () => {
+    setIsLoading(true);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCapturedPhoto('https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=600');
+
+    setTimeout(async () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      const cls = { label: 'Glass Bottle', recyclable: true, special: false, confidence: 0.95, reason: 'Standard clear glass bottle.' };
+      setResult(cls);
+      setRecycleStatus('recyclable');
+      setIsExpanded(false);
+      setIsLoading(false);
+      await saveScan(cls, 'recyclable');
+    }, 1200);
+  }, [saveScan]);
 
   const handleExplain = useCallback(() => {
     if (!result || !recycleStatus) return;
@@ -199,21 +291,49 @@ export default function ScanTab() {
     return 'Not recyclable';
   }, [recycleStatus]);
 
-  const statusIcon = useMemo(() => {
+  // Safe Explicit Type Casting for Ionicons Layout Assets
+  const statusIcon = useMemo<keyof typeof Ionicons.glyphMap>(() => {
     if (recycleStatus === 'recyclable') return 'checkmark-circle';
     if (recycleStatus === 'special') return 'alert-circle';
     return 'close-circle';
   }, [recycleStatus]);
 
+  const cameraHeight = isExpanded ? SCREEN_WIDTH * 1.3 : SCREEN_WIDTH * 0.65;
+  
+  // Slide dynamic track bounds horizontally
+  const gradientTranslateX = scanAnimValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-SCREEN_WIDTH, 0],
+  });
+
   return (
     <ThemedView style={styles.container}>
-      <View style={styles.cameraSection}>
+      <View style={[styles.cameraSection, { height: cameraHeight }]}>
         {Platform.OS !== 'web' ? (
           <>
             {cameraPermission?.granted ? (
-              <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+              capturedPhoto ? (
+                <View style={{ width: SCREEN_WIDTH, height: cameraHeight }}>
+                  <Image source={{ uri: capturedPhoto }} style={[styles.camera, { height: cameraHeight }]} resizeMode="cover" fadeDuration={0} />
+                  {isLoading && (
+                    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+                      <Animated.View style={[styles.gradientTrack, { transform: [{ translateX: gradientTranslateX }], height: cameraHeight }]}>
+                        <LinearGradient
+                          colors={['#4285F4', '#9B51E0', '#E91E63', '#FFA000', '#4285F4', '#9B51E0', '#E91E63']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFill}
+                        />
+                      </Animated.View>
+                      <View style={[styles.gradientOverlay, { height: cameraHeight }]} />
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <CameraView ref={cameraRef} style={[styles.camera, { height: cameraHeight }]} facing="back" />
+              )
             ) : (
-              <View style={[styles.camera, styles.permissionView]}>
+              <View style={[styles.camera, styles.permissionView, { height: cameraHeight }]}>
                 <Ionicons name="camera-outline" size={48} color={theme.textSecondary} />
                 <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', marginTop: Spacing.two }}>
                   Camera access needed to scan items
@@ -226,31 +346,66 @@ export default function ScanTab() {
 
             <Pressable
               style={[styles.scanButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.6 : 1 }]}
-              onPress={handleScan}
-              disabled={isLoading || !cameraPermission?.granted}
+              onPress={result ? handleScanAnother : handleScan}
+              disabled={isLoading || (!result && !cameraPermission?.granted)}
             >
               {isLoading ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Ionicons name="camera" size={24} color="#fff" />
+                <Ionicons name={result ? "refresh" : "camera"} size={24} color="#fff" />
               )}
               <ThemedText type="smallBold" style={{ color: '#fff', marginLeft: Spacing.two }}>
-                {isLoading ? 'Scanning...' : 'Scan item'}
+                {isLoading ? 'Scanning...' : result ? 'Scan another' : 'Scan item'}
               </ThemedText>
             </Pressable>
           </>
         ) : (
-          <View style={[styles.camera, styles.permissionView]}>
-            <Ionicons name="camera-outline" size={48} color={theme.textSecondary} />
-            <ThemedText type="small" themeColor="textSecondary">Camera scanning is not supported on web.</ThemedText>
-            <Pressable style={[styles.grantButton, { backgroundColor: theme.primary }]} onPress={() => {
-              setResult({ label: 'Test Bottle', recyclable: true, special: false, confidence: 0.92, reason: 'Glass bottle' });
-              setRecycleStatus('recyclable');
-              saveScan({ label: 'Test Bottle', recyclable: true, special: false, confidence: 0.92, reason: 'Glass bottle' }, 'recyclable');
-            }}>
-              <ThemedText type="smallBold" style={{ color: '#fff' }}>Simulate scan</ThemedText>
-            </Pressable>
-          </View>
+          <>
+            {capturedPhoto ? (
+              <View style={{ width: SCREEN_WIDTH, height: cameraHeight }}>
+                <Image source={{ uri: capturedPhoto }} style={[styles.camera, { height: cameraHeight }]} resizeMode="cover" fadeDuration={0} />
+                {isLoading && (
+                  <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+                    <Animated.View style={[styles.gradientTrack, { transform: [{ translateX: gradientTranslateX }], height: cameraHeight }]}>
+                      <LinearGradient
+                        colors={['#4285F4', '#9B51E0', '#E91E63', '#FFA000', '#4285F4', '#9B51E0', '#E91E63']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                    </Animated.View>
+                    <View style={[styles.gradientOverlay, { height: cameraHeight }]} />
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={[styles.camera, styles.permissionView, { height: cameraHeight }]}>
+                <Ionicons name="camera-outline" size={48} color={theme.textSecondary} />
+                <ThemedText type="small" themeColor="textSecondary">Camera scanning is not supported on web.</ThemedText>
+                <Pressable
+                  style={[styles.grantButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.6 : 1 }]}
+                  onPress={handleWebSimulate}
+                  disabled={isLoading}
+                >
+                  <ThemedText type="smallBold" style={{ color: '#fff' }}>
+                    {isLoading ? 'Simulating...' : 'Simulate scan'}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            )}
+
+            {result && (
+              <Pressable
+                style={[styles.scanButton, { backgroundColor: theme.primary }]}
+                onPress={handleScanAnother}
+              >
+                <Ionicons name="refresh" size={24} color="#fff" />
+                <ThemedText type="smallBold" style={{ color: '#fff', marginLeft: Spacing.two }}>
+                  Scan another
+                </ThemedText>
+              </Pressable>
+            )}
+          </>
         )}
       </View>
 
@@ -258,7 +413,7 @@ export default function ScanTab() {
         {result && recycleStatus && (
           <ThemedView type="backgroundElement" style={styles.resultCard}>
             <View style={styles.resultHeader}>
-              <Ionicons name={statusIcon as any} size={28} color={statusColor} />
+              <Ionicons name={statusIcon} size={28} color={statusColor} />
               <View style={{ flex: 1, marginLeft: Spacing.three }}>
                 <ThemedText type="heading">{result.label}</ThemedText>
                 <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
@@ -364,7 +519,10 @@ export default function ScanTab() {
                 onPress={async () => {
                   const { status } = await Location.requestForegroundPermissionsAsync();
                   if (status === 'granted') {
-                    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                    let loc = await Location.getLastKnownPositionAsync();
+                    if (!loc) {
+                      loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                    }
                     const newLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
                     setUserLocation(newLoc);
                     if (result) fetchDisposalSites(result.label);
@@ -390,8 +548,6 @@ export default function ScanTab() {
   );
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   cameraSection: {
@@ -400,7 +556,6 @@ const styles = StyleSheet.create({
   },
   camera: {
     width: SCREEN_WIDTH,
-    height: SCREEN_WIDTH * 0.65,
   },
   permissionView: {
     justifyContent: 'center',
@@ -430,6 +585,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
+    zIndex: 20,
   },
   resultsScroll: { flex: 1 },
   resultsContent: {
@@ -457,6 +613,7 @@ const styles = StyleSheet.create({
   },
   resultActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.two,
     marginTop: Spacing.two,
   },
@@ -466,6 +623,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.three,
+  },
+  gradientTrack: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: SCREEN_WIDTH * 2,
+    opacity: 0.7,
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.12)',
   },
   explanationBox: {
     padding: Spacing.three,

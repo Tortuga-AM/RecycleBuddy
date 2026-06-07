@@ -15,8 +15,7 @@
         "NSLocationAlwaysUsageDescription": "RecycleBuddy uses your location to find nearby recycling centers.",
         "NSCameraUsageDescription": "RecycleBuddy uses your camera to scan items for recycling."
       },
-      "bundleIdentifier": "com.anonymous.RecycleBuddy",
-      "usesAppleSignIn": true
+      "bundleIdentifier": "com.anonymous.RecycleBuddy"
     },
     "android": {
       "adaptiveIcon": {
@@ -64,7 +63,6 @@
           "cameraPermission": "RecycleBuddy uses your camera to scan items for recycling."
         }
       ],
-      "expo-apple-authentication",
       "expo-secure-store"
     ],
     "experiments": {

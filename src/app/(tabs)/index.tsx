@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { ScrollView, Pressable, StyleSheet, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedText } from '@/components/themed-text';
@@ -24,6 +24,7 @@ interface Stats {
   recycledCount: number;
   specialCount: number;
   totalWeight: number;
+  contaminationSaves: number;
   recentScans: ScanRow[];
   breakdown: Record<string, number>;
 }
@@ -41,6 +42,7 @@ export default function HomeTab() {
   const router = useRouter();
   const [stats, setStats] = useState<Stats | null>(null);
   const [zipCode, setZipCode] = useState<string | null>(null);
+  const [showZipPrompt, setShowZipPrompt] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async () => {
@@ -50,7 +52,13 @@ export default function HomeTab() {
       .select('zip_code')
       .eq('id', user.id)
       .maybeSingle();
-    if (data?.zip_code) setZipCode(data.zip_code);
+    if (data?.zip_code) {
+      setZipCode(data.zip_code);
+      setShowZipPrompt(false);
+    } else {
+      setZipCode(null);
+      setShowZipPrompt(true);
+    }
   }, [user]);
 
   const loadStats = useCallback(async () => {
@@ -70,14 +78,18 @@ export default function HomeTab() {
       let totalWeight = 0;
       let recycledCount = 0;
       let specialCount = 0;
+      let contaminationSaves = 0;
 
       for (const row of rows) {
         const key = row.label.toLowerCase();
         breakdown[key] = (breakdown[key] || 0) + 1;
         const w = row.weight_estimate ?? estimateWeight(row.label);
-        totalWeight += w;
+        if (row.recyclable) {
+          totalWeight += w;
+        }
         if (row.recyclable) recycledCount++;
         if (row.special) specialCount++;
+        if (!row.recyclable) contaminationSaves++;
       }
 
       setStats({
@@ -85,6 +97,7 @@ export default function HomeTab() {
         recycledCount,
         specialCount,
         totalWeight: Math.round(totalWeight * 100) / 100,
+        contaminationSaves,
         recentScans: rows.slice(0, 5),
         breakdown,
       });
@@ -93,10 +106,12 @@ export default function HomeTab() {
     }
   }, [user]);
 
-  useEffect(() => {
-    loadProfile();
-    loadStats();
-  }, [loadProfile, loadStats]);
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+      loadStats();
+    }, [loadProfile, loadStats])
+  );
 
   const firstName = user?.user_metadata?.full_name?.split(' ')[0]
     ?? user?.user_metadata?.name?.split(' ')[0]
@@ -116,7 +131,7 @@ export default function HomeTab() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.header}>
             <ThemedText type="heading">Hello, {firstName}</ThemedText>
@@ -124,6 +139,27 @@ export default function HomeTab() {
               {zipCode ? `Zip: ${zipCode}` : 'Set your zip code in Profile'}
             </ThemedText>
           </View>
+
+          {showZipPrompt && (
+            <ThemedView type="backgroundElement" style={[styles.card, styles.zipPromptCard, { borderColor: theme.primary + '40' }]}>
+              <View style={styles.zipPromptHeader}>
+                <Ionicons name="location" size={24} color={theme.primary} />
+                <ThemedText type="smallBold" style={{ marginLeft: Spacing.two, flex: 1 }}>Set your ZIP code</ThemedText>
+                <Pressable onPress={() => setShowZipPrompt(false)}>
+                  <Ionicons name="close" size={20} color={theme.textSecondary} />
+                </Pressable>
+              </View>
+              <ThemedText type="small" themeColor="textSecondary">
+                Enter your ZIP code to check local recycling rules and find nearby facilities.
+              </ThemedText>
+              <Pressable
+                style={[styles.zipPromptButton, { backgroundColor: theme.primary }]}
+                onPress={() => router.push('/zipcode')}
+              >
+                <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>Configure ZIP Code</ThemedText>
+              </Pressable>
+            </ThemedView>
+          )}
 
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="smallBold" style={{ marginBottom: Spacing.two }}>Your impact</ThemedText>
@@ -134,11 +170,15 @@ export default function HomeTab() {
                 <View style={styles.statsRow}>
                   <View style={styles.statItem}>
                     <ThemedText type="title" themeColor="primary" style={styles.statNumber}>{stats.totalScans}</ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">Items scanned</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">Scans</ThemedText>
                   </View>
                   <View style={styles.statItem}>
                     <ThemedText type="title" themeColor="recyclable" style={styles.statNumber}>{stats.recycledCount}</ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">Recycled</ThemedText>
+                  </View>
+                  <View style={styles.statItem}>
+                    <ThemedText type="title" themeColor="accent" style={styles.statNumber}>{stats.contaminationSaves}</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">Load saves</ThemedText>
                   </View>
                   <View style={styles.statItem}>
                     <ThemedText type="title" themeColor="primary" style={styles.statNumber}>{stats.totalWeight.toFixed(1)}</ThemedText>
@@ -190,14 +230,6 @@ export default function HomeTab() {
               </View>
             ))}
           </ThemedView>
-
-          <Pressable
-            style={[styles.scanCTA, { backgroundColor: theme.primary }]}
-            onPress={() => router.navigate({ pathname: '/(tabs)/scan' })}
-          >
-            <Ionicons name="camera" size={22} color="#fff" />
-            <ThemedText type="smallBold" style={{ color: '#fff', marginLeft: Spacing.two }}>Scan an item</ThemedText>
-          </Pressable>
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -260,5 +292,20 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     borderRadius: Spacing.four,
     marginTop: Spacing.two,
+  },
+  zipPromptCard: {
+    borderWidth: 1,
+    gap: Spacing.two,
+  },
+  zipPromptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  zipPromptButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three,
+    marginTop: Spacing.one,
   },
 });

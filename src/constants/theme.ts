@@ -80,15 +80,26 @@ export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
 
 export const defaultWeights: Record<string, number> = {
-  bottle: 0.25,
-  can: 0.03,
-  paper: 0.12,
-  cardboard: 0.5,
-  glass: 0.35,
-  plastic: 0.18,
+  bottle: 0.15,
+  can: 0.02,
+  paper: 0.01,
+  cardboard: 0.3,
+  glass: 0.25,
+  plastic: 0.05,
+  bag: 0.01,
+  cup: 0.03,
+  carton: 0.04,
+  box: 0.2,
+  wrapper: 0.005,
+  foil: 0.01,
+  container: 0.08,
+  peel: 0.05,
+  core: 0.05,
+  food: 0.1,
   mattress: 18,
-  battery: 0.2,
-  electronics: 2,
+  battery: 0.05,
+  electronics: 1.5,
+  phone: 0.2,
 };
 
 export function estimateWeight(label: string) {
@@ -98,5 +109,5 @@ export function estimateWeight(label: string) {
       return defaultWeights[key];
     }
   }
-  return 0.5;
+  return 0.05;
 }

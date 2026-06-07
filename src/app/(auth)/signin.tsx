@@ -20,16 +20,25 @@ export default function SignInScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple } = useAuth();
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle } = useAuth();
   const theme = useTheme();
 
   const handleEmailAuth = async () => {
     if (!email.trim() || !password.trim()) {
       setError('Please fill in all fields');
+      return;
+    }
+    if (isSignUp && !confirmPassword.trim()) {
+      setError('Please confirm your password');
+      return;
+    }
+    if (isSignUp && password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
     if (isSignUp && password.length < 6) {
@@ -54,17 +63,6 @@ export default function SignInScreen() {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
-      if (result.error) setError(result.error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleApple = async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const result = await signInWithApple();
       if (result.error) setError(result.error);
     } finally {
       setLoading(false);
@@ -135,6 +133,18 @@ export default function SignInScreen() {
                 autoCapitalize="none"
               />
 
+              {isSignUp && (
+                <TextInput
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm password"
+                  placeholderTextColor={theme.textSecondary}
+                  style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.textSecondary + '40' }]}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              )}
+
               <Pressable
                 style={[styles.primaryButton, { backgroundColor: theme.primary, opacity: loading ? 0.6 : 1 }]}
                 onPress={handleEmailAuth}
@@ -145,7 +155,7 @@ export default function SignInScreen() {
                 </ThemedText>
               </Pressable>
 
-              <Pressable onPress={() => { setIsSignUp(!isSignUp); setError(null); }} style={styles.toggleRow}>
+              <Pressable onPress={() => { setIsSignUp(!isSignUp); setError(null); setConfirmPassword(''); }} style={styles.toggleRow}>
                 <ThemedText type="small" themeColor="textSecondary">
                   {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
                 </ThemedText>
@@ -170,17 +180,6 @@ export default function SignInScreen() {
                 <Ionicons name="logo-google" size={20} color={theme.text} />
                 <ThemedText type="smallBold" style={{ marginLeft: Spacing.two }}>Continue with Google</ThemedText>
               </Pressable>
-
-              {Platform.OS === 'ios' && (
-                <Pressable
-                  style={[styles.socialButton, { backgroundColor: theme.backgroundElement, borderColor: theme.textSecondary + '30' }]}
-                  onPress={handleApple}
-                  disabled={loading}
-                >
-                  <Ionicons name="logo-apple" size={20} color={theme.text} />
-                  <ThemedText type="smallBold" style={{ marginLeft: Spacing.two }}>Continue with Apple</ThemedText>
-                </Pressable>
-              )}
             </View>
           </ScrollView>
         </KeyboardAvoidingView>

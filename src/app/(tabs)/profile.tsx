@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedText } from '@/components/themed-text';
@@ -33,9 +33,11 @@ export default function ProfileTab() {
     if (count != null) setScanCount(count);
   }, [user]);
 
-  useEffect(() => {
-    loadProfile();
-  }, [loadProfile]);
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [loadProfile])
+  );
 
   const handleSignOut = async () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
@@ -68,7 +70,7 @@ export default function ProfileTab() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.profileHeader}>
             <View style={[styles.avatar, { backgroundColor: theme.primary + '30' }]}>

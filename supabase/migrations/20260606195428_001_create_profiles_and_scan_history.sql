@@ -111,11 +111,10 @@ CREATE POLICY "delete_own_scans" ON scan_history FOR DELETE
 -- Index for fast per-user queries
 CREATE INDEX IF NOT EXISTS idx_scan_history_user_id ON scan_history(user_id);
 
--- Function to auto-create profile on user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO profiles (id, display_name, email, avatar_url)
+  INSERT INTO public.profiles (id, display_name, email, avatar_url)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
@@ -124,7 +123,7 @@ BEGIN
   );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
