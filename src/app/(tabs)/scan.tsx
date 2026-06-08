@@ -14,19 +14,30 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Dimensions,
   Image,
   LayoutAnimation,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
 
-// Global Dimensions Setup (Prevents ReferenceErrors down-scope)
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// Robust conditional import to prevent 'codegenNativeComponent' errors on Web/SSR.
+let MapView: any = View;
+let Marker: any = View;
+
+if (Platform.OS !== 'web') {
+  try {
+    const Maps = require('react-native-maps');
+    MapView = Maps.default || View;
+    Marker = Maps.Marker || View;
+  } catch (e) {
+    console.warn('Maps failed to load on native:', e);
+  }
+}
 
 interface ClassificationResult {
   label: string;
@@ -68,6 +79,7 @@ export default function ScanTab() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { user } = useAuth();
   const theme = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
   const scanAnimValue = useRef(new Animated.Value(0)).current;
 
   const [isLoading, setIsLoading] = useState(false);
@@ -82,6 +94,12 @@ export default function ScanTab() {
   const [showMap, setShowMap] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [zipCode, setZipCode] = useState<string | null>(null);
+
+  const triggerLayoutAnimation = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -204,20 +222,20 @@ export default function ScanTab() {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.6, skipProcessing: true });
       if (!photo) throw new Error("Capture failed");
 
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      triggerLayoutAnimation();
       setCapturedPhoto(photo.uri);
 
       const cls = await classifyImage(photo.uri);
 
       if (!cls || cls.confidence < 0.35) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        triggerLayoutAnimation();
         setResult({ label: 'Unknown item', recyclable: false, special: false, confidence: cls?.confidence ?? 0, reason: 'Could not identify the item clearly.' });
         setRecycleStatus('notRecyclable');
         setIsExpanded(false);
         return;
       }
 
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      triggerLayoutAnimation();
       setResult(cls);
       const status = cls.special ? 'special' : cls.recyclable ? 'recyclable' : 'notRecyclable';
       setRecycleStatus(status);
@@ -238,7 +256,7 @@ export default function ScanTab() {
   }, [classifyImage, saveScan, fetchDisposalSites, userLocation]);
 
   const handleScanAnother = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    triggerLayoutAnimation();
     setResult(null);
     setRecycleStatus('');
     setCapturedPhoto(null);
@@ -250,11 +268,11 @@ export default function ScanTab() {
 
   const handleWebSimulate = useCallback(async () => {
     setIsLoading(true);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    triggerLayoutAnimation();
     setCapturedPhoto('https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=600');
 
     setTimeout(async () => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      triggerLayoutAnimation();
       const cls = { label: 'Glass Bottle', recyclable: true, special: false, confidence: 0.95, reason: 'Standard clear glass bottle.' };
       setResult(cls);
       setRecycleStatus('recyclable');
@@ -275,9 +293,19 @@ export default function ScanTab() {
   }, [result, recycleStatus, showExplanation]);
 
   const handleShowMap = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    triggerLayoutAnimation();
     setShowMap(!showMap);
   }, [showMap]);
+
+  const openInExternalMaps = useCallback((site: DisposalSite) => {
+    const query = encodeURIComponent(`${site.name} ${site.address || ''} ${site.city || ''}`);
+    const url = Platform.select({
+      ios: `maps:0,0?q=${query}`,
+      android: `geo:0,0?q=${query}`,
+      default: `https://www.google.com/maps/search/?api=1&query=${query}`,
+    });
+    if (url) Linking.openURL(url);
+  }, []);
 
   const statusColor = useMemo(() => {
     if (recycleStatus === 'recyclable') return theme.recyclable;
@@ -298,50 +326,44 @@ export default function ScanTab() {
     return 'close-circle';
   }, [recycleStatus]);
 
-  const cameraHeight = isExpanded ? SCREEN_WIDTH * 1.3 : SCREEN_WIDTH * 0.65;
+  // Responsive dimensions: Constrain width on Web/Desktop to avoid massive vertical overflows
+  const isWeb = Platform.OS === 'web';
+  const contentWidth = isWeb ? Math.min(windowWidth, 500) : windowWidth;
+  
+  const cameraHeight = isExpanded 
+    ? contentWidth * (isWeb ? 0.8 : 1.3) 
+    : contentWidth * (isWeb ? 0.45 : 0.65);
   
   // Slide dynamic track bounds horizontally
   const gradientTranslateX = scanAnimValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-SCREEN_WIDTH, 0],
+    outputRange: [-contentWidth, 0],
   });
 
   return (
     <ThemedView style={styles.container}>
-      <View style={[styles.cameraSection, { height: cameraHeight }]}>
-        {Platform.OS !== 'web' ? (
+      <View style={[styles.cameraSection, { height: cameraHeight, width: '100%', alignSelf: 'center' }]}>
+        {cameraPermission?.granted ? (
           <>
-            {cameraPermission?.granted ? (
-              capturedPhoto ? (
-                <View style={{ width: SCREEN_WIDTH, height: cameraHeight }}>
-                  <Image source={{ uri: capturedPhoto }} style={[styles.camera, { height: cameraHeight }]} resizeMode="cover" fadeDuration={0} />
-                  {isLoading && (
-                    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-                      <Animated.View style={[styles.gradientTrack, { transform: [{ translateX: gradientTranslateX }], height: cameraHeight }]}>
-                        <LinearGradient
-                          colors={['#4285F4', '#9B51E0', '#E91E63', '#FFA000', '#4285F4', '#9B51E0', '#E91E63']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                          style={StyleSheet.absoluteFill}
-                        />
-                      </Animated.View>
-                      <View style={[styles.gradientOverlay, { height: cameraHeight }]} />
-                    </View>
-                  )}
-                </View>
-              ) : (
-                <CameraView ref={cameraRef} style={[styles.camera, { height: cameraHeight }]} facing="back" />
-              )
-            ) : (
-              <View style={[styles.camera, styles.permissionView, { height: cameraHeight }]}>
-                <Ionicons name="camera-outline" size={48} color={theme.textSecondary} />
-                <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', marginTop: Spacing.two }}>
-                  Camera access needed to scan items
-                </ThemedText>
-                <Pressable style={[styles.grantButton, { backgroundColor: theme.primary }]} onPress={requestCameraPermission}>
-                  <ThemedText type="smallBold" style={{ color: '#fff' }}>Grant access</ThemedText>
-                </Pressable>
+            {capturedPhoto ? (
+              <View style={{ width: contentWidth, height: cameraHeight }}>
+                <Image source={{ uri: capturedPhoto }} style={[styles.camera, { height: cameraHeight, width: contentWidth }]} resizeMode="cover" fadeDuration={0} />
+                {isLoading && (
+                  <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+                    <Animated.View style={[styles.gradientTrack, { transform: [{ translateX: gradientTranslateX }], height: cameraHeight, width: contentWidth * 2 }]}>
+                      <LinearGradient
+                        colors={['#4285F4', '#9B51E0', '#E91E63', '#FFA000', '#4285F4', '#9B51E0', '#E91E63']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                    </Animated.View>
+                    <View style={[styles.gradientOverlay, { height: cameraHeight }]} />
+                  </View>
+                )}
               </View>
+            ) : (
+              <CameraView ref={cameraRef} style={[styles.camera, { height: cameraHeight, width: contentWidth }]} facing="back" />
             )}
 
             <Pressable
@@ -360,52 +382,24 @@ export default function ScanTab() {
             </Pressable>
           </>
         ) : (
-          <>
-            {capturedPhoto ? (
-              <View style={{ width: SCREEN_WIDTH, height: cameraHeight }}>
-                <Image source={{ uri: capturedPhoto }} style={[styles.camera, { height: cameraHeight }]} resizeMode="cover" fadeDuration={0} />
-                {isLoading && (
-                  <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-                    <Animated.View style={[styles.gradientTrack, { transform: [{ translateX: gradientTranslateX }], height: cameraHeight }]}>
-                      <LinearGradient
-                        colors={['#4285F4', '#9B51E0', '#E91E63', '#FFA000', '#4285F4', '#9B51E0', '#E91E63']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                    </Animated.View>
-                    <View style={[styles.gradientOverlay, { height: cameraHeight }]} />
-                  </View>
-                )}
-              </View>
-            ) : (
-              <View style={[styles.camera, styles.permissionView, { height: cameraHeight }]}>
-                <Ionicons name="camera-outline" size={48} color={theme.textSecondary} />
-                <ThemedText type="small" themeColor="textSecondary">Camera scanning is not supported on web.</ThemedText>
-                <Pressable
-                  style={[styles.grantButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.6 : 1 }]}
-                  onPress={handleWebSimulate}
-                  disabled={isLoading}
-                >
-                  <ThemedText type="smallBold" style={{ color: '#fff' }}>
-                    {isLoading ? 'Simulating...' : 'Simulate scan'}
-                  </ThemedText>
-                </Pressable>
-              </View>
-            )}
+          <View style={[styles.camera, styles.permissionView, { height: cameraHeight }]}>
+            <Ionicons name="camera-outline" size={48} color={theme.textSecondary} />
+            <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', marginTop: Spacing.two }}>
+              Camera access needed to scan items
+            </ThemedText>
+            <Pressable style={[styles.grantButton, { backgroundColor: theme.primary }]} onPress={requestCameraPermission}>
+              <ThemedText type="smallBold" style={{ color: '#fff' }}>Grant access</ThemedText>
+            </Pressable>
+          </View>
+        )}
 
-            {result && (
-              <Pressable
-                style={[styles.scanButton, { backgroundColor: theme.primary }]}
-                onPress={handleScanAnother}
-              >
-                <Ionicons name="refresh" size={24} color="#fff" />
-                <ThemedText type="smallBold" style={{ color: '#fff', marginLeft: Spacing.two }}>
-                  Scan another
-                </ThemedText>
-              </Pressable>
-            )}
-          </>
+        {Platform.OS === 'web' && !capturedPhoto && !isLoading && (
+          <Pressable
+            style={[styles.webSimulateButton, { borderColor: theme.primary }]}
+            onPress={handleWebSimulate}
+          >
+            <ThemedText type="smallBold" themeColor="primary">Try Simulation</ThemedText>
+          </Pressable>
         )}
       </View>
 
@@ -470,7 +464,7 @@ export default function ScanTab() {
             {loadingSites ? (
               <ActivityIndicator color={theme.primary} style={{ marginVertical: Spacing.three }} />
             ) : disposalSites.length > 0 ? (
-              <>
+              <View style={{ gap: Spacing.two }}>
                 <MapView
                   style={styles.map}
                   initialRegion={
@@ -491,7 +485,7 @@ export default function ScanTab() {
                 </MapView>
 
                 {disposalSites.map((site, i) => (
-                  <View key={i} style={styles.siteRow}>
+                  <Pressable key={i} style={styles.siteRow} onPress={() => openInExternalMaps(site)}>
                     <Ionicons name="location" size={18} color={theme.primary} />
                     <View style={{ flex: 1, marginLeft: Spacing.two }}>
                       <ThemedText type="smallBold">{site.name}</ThemedText>
@@ -504,9 +498,10 @@ export default function ScanTab() {
                         </ThemedText>
                       )}
                     </View>
-                  </View>
+                    <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+                  </Pressable>
                 ))}
-              </>
+              </View>
             ) : (
               <ThemedText type="small" themeColor="textSecondary">
                 {userLocation ? 'No disposal sites found nearby. Try a wider search or check local resources.' : 'Enable location access to find nearby disposal sites.'}
@@ -551,11 +546,11 @@ export default function ScanTab() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   cameraSection: {
-    width: '100%',
     alignItems: 'center',
+    backgroundColor: '#000',
   },
   camera: {
-    width: SCREEN_WIDTH,
+    overflow: 'hidden',
   },
   permissionView: {
     justifyContent: 'center',
@@ -586,6 +581,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     zIndex: 20,
+  },
+  webSimulateButton: {
+    position: 'absolute',
+    bottom: Spacing.three,
+    right: Spacing.four,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+    borderRadius: Spacing.two,
+    borderWidth: 1,
   },
   resultsScroll: { flex: 1 },
   resultsContent: {
@@ -629,7 +633,6 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     left: 0,
-    width: SCREEN_WIDTH * 2,
     opacity: 0.7,
   },
   gradientOverlay: {
@@ -657,6 +660,7 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: Spacing.three,
     overflow: 'hidden',
+    display: Platform.OS === 'web' ? 'none' : 'flex',
   },
   siteRow: {
     flexDirection: 'row',
