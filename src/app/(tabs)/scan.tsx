@@ -25,20 +25,6 @@ import {
   View,
 } from 'react-native';
 
-// Robust conditional import to prevent 'codegenNativeComponent' errors on Web/SSR.
-let MapView: any = View;
-let Marker: any = View;
-
-if (Platform.OS !== 'web') {
-  try {
-    const Maps = require('react-native-maps');
-    MapView = Maps.default || View;
-    Marker = Maps.Marker || View;
-  } catch (e) {
-    console.warn('Maps failed to load on native:', e);
-  }
-}
-
 interface ClassificationResult {
   label: string;
   recyclable: boolean;
@@ -94,6 +80,10 @@ export default function ScanTab() {
   const [showMap, setShowMap] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [zipCode, setZipCode] = useState<string | null>(null);
+  const [mapComponents, setMapComponents] = useState<{ MapView: any; Marker: any }>({
+    MapView: View,
+    Marker: View,
+  });
 
   const triggerLayoutAnimation = useCallback(() => {
     if (Platform.OS !== 'web') {
@@ -111,6 +101,18 @@ export default function ScanTab() {
       }
       setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
     })();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      // Lazy-load maps on native to prevent bundling issues on web.
+      try {
+        const MapsModule = require('react-native-maps');
+        setMapComponents({ MapView: MapsModule.default || View, Marker: MapsModule.Marker || View });
+      } catch (e) {
+        console.warn('Maps failed to load on native:', e);
+      }
+    }
   }, []);
 
   const loadZipCode = useCallback(async () => {
@@ -340,6 +342,8 @@ export default function ScanTab() {
     outputRange: [-contentWidth, 0],
   });
 
+  const { MapView, Marker } = mapComponents;
+
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.cameraSection, { height: cameraHeight, width: '100%', alignSelf: 'center' }]}>
@@ -465,24 +469,26 @@ export default function ScanTab() {
               <ActivityIndicator color={theme.primary} style={{ marginVertical: Spacing.three }} />
             ) : disposalSites.length > 0 ? (
               <View style={{ gap: Spacing.two }}>
-                <MapView
-                  style={styles.map}
-                  initialRegion={
-                    userLocation
-                      ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 0.1, longitudeDelta: 0.1 }
-                      : { latitude: 39.83, longitude: -98.58, latitudeDelta: 20, longitudeDelta: 20 }
-                  }
-                  showsUserLocation
-                >
-                  {disposalSites.filter(s => s.latitude && s.longitude).map((site, i) => (
-                    <Marker
-                      key={i}
-                      coordinate={{ latitude: site.latitude!, longitude: site.longitude! }}
-                      title={site.name}
-                      description={[site.address, site.city, site.state].filter(Boolean).join(', ')}
-                    />
-                  ))}
-                </MapView>
+                {Platform.OS !== 'web' && (
+                  <MapView
+                    style={styles.map}
+                    initialRegion={
+                      userLocation
+                        ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 0.1, longitudeDelta: 0.1 }
+                        : { latitude: 39.83, longitude: -98.58, latitudeDelta: 20, longitudeDelta: 20 }
+                    }
+                    showsUserLocation
+                  >
+                    {disposalSites.filter(s => s.latitude && s.longitude).map((site, i) => (
+                      <Marker
+                        key={i}
+                        coordinate={{ latitude: site.latitude!, longitude: site.longitude! }}
+                        title={site.name}
+                        description={[site.address, site.city, site.state].filter(Boolean).join(', ')}
+                      />
+                    ))}
+                  </MapView>
+                )}
 
                 {disposalSites.map((site, i) => (
                   <Pressable key={i} style={styles.siteRow} onPress={() => openInExternalMaps(site)}>
@@ -660,7 +666,6 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: Spacing.three,
     overflow: 'hidden',
-    display: Platform.OS === 'web' ? 'none' : 'flex',
   },
   siteRow: {
     flexDirection: 'row',
