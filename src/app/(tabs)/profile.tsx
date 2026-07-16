@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/providers/auth-provider';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/providers/auth-provider';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ProfileTab() {
   const { user, signOut } = useAuth();
@@ -33,16 +33,20 @@ export default function ProfileTab() {
     if (count != null) setScanCount(count);
   }, [user]);
 
-  useFocusEffect(
-    useCallback(() => {
+  useEffect(() => {
+    if (user) {
       loadProfile();
-    }, [loadProfile])
-  );
+    } else {
+      setProfile(null);
+    }
+  }, [user, loadProfile]);
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: signOut },
+      { text: 'Sign out', style: 'destructive', onPress: () => {
+        signOut();
+      }},
     ]);
   };
 
