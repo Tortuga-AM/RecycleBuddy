@@ -1,3 +1,9 @@
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { Colors, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { useAuth } from '@/providers/auth-provider';
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -9,12 +15,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/providers/auth-provider';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing, Colors } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
 
 export default function SignInScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -25,7 +25,7 @@ export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle } = useAuth();
+  const { signInWithEmail, signUpWithEmail } = useAuth();
   const theme = useTheme();
 
   const handleEmailAuth = async () => {
@@ -52,17 +52,6 @@ export default function SignInScreen() {
       const result = isSignUp
         ? await signUpWithEmail(email.trim(), password, displayName.trim() || undefined)
         : await signInWithEmail(email.trim(), password);
-      if (result.error) setError(result.error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogle = async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const result = await signInWithGoogle();
       if (result.error) setError(result.error);
     } finally {
       setLoading(false);
@@ -165,22 +154,6 @@ export default function SignInScreen() {
               </Pressable>
             </ThemedView>
 
-            <View style={styles.dividerRow}>
-              <View style={[styles.dividerLine, { backgroundColor: theme.textSecondary + '30' }]} />
-              <ThemedText type="small" themeColor="textSecondary" style={styles.dividerText}>or</ThemedText>
-              <View style={[styles.dividerLine, { backgroundColor: theme.textSecondary + '30' }]} />
-            </View>
-
-            <View style={styles.socialButtons}>
-              <Pressable
-                style={[styles.socialButton, { backgroundColor: theme.backgroundElement, borderColor: theme.textSecondary + '30' }]}
-                onPress={handleGoogle}
-                disabled={loading}
-              >
-                <Ionicons name="logo-google" size={20} color={theme.text} />
-                <ThemedText type="smallBold" style={{ marginLeft: Spacing.two }}>Continue with Google</ThemedText>
-              </Pressable>
-            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>

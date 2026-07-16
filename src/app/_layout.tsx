@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, StyleSheet, View } from 'react-native';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -19,6 +19,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/signin');
     } else if (user && inAuthGroup) {
+      if (Platform.OS === 'web') {
+        Alert.alert(
+          'Limited Web Experience',
+          'The web version is for demonstration purposes and some features may not work as expected. For the best experience, please use the mobile app.'
+        );
+      }
       router.replace('/(tabs)');
     }
   }, [user, loading, segments]);
