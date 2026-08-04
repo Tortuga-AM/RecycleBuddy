@@ -1,6 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { estimateWeight, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
@@ -198,18 +198,6 @@ export default function ScanTab() {
     }
   }, [userLocation]);
 
-  const saveScan = useCallback(async (cls: ClassificationResult, status: string) => {
-    if (!user) return;
-    const weight = cls.weight_estimate ?? estimateWeight(cls.label);
-    await supabase.from('scan_history').insert({
-      user_id: user.id,
-      label: cls.label,
-      recyclable: cls.recyclable,
-      special: cls.special,
-      confidence: cls.confidence,
-      weight_estimate: status !== 'notRecyclable' ? weight : null,
-    });
-  }, [user]);
 
   const handleScan = useCallback(async () => {
     if (!cameraRef.current) return;
@@ -243,7 +231,7 @@ export default function ScanTab() {
       setRecycleStatus(status);
       setIsExpanded(false);
 
-      await saveScan(cls, status);
+      
 
       if ((status === 'special' || status === 'notRecyclable') && userLocation) {
         fetchDisposalSites(cls.label);
@@ -255,7 +243,7 @@ export default function ScanTab() {
     } finally {
       setIsLoading(false);
     }
-  }, [classifyImage, saveScan, fetchDisposalSites, userLocation]);
+  }, [classifyImage, fetchDisposalSites, userLocation]);
 
   const handleScanAnother = useCallback(() => {
     triggerLayoutAnimation();
@@ -268,21 +256,26 @@ export default function ScanTab() {
     setDisposalSites([]);
   }, []);
 
-  const handleWebSimulate = useCallback(async () => {
-    setIsLoading(true);
-    triggerLayoutAnimation();
-    setCapturedPhoto('https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=600');
+ const handleWebSimulate = useCallback(() => {
+  setIsLoading(true);
+  triggerLayoutAnimation();
+  setCapturedPhoto('https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=600');
 
-    setTimeout(async () => {
-      triggerLayoutAnimation();
-      const cls = { label: 'Glass Bottle', recyclable: true, special: false, confidence: 0.95, reason: 'Standard clear glass bottle.' };
-      setResult(cls);
-      setRecycleStatus('recyclable');
-      setIsExpanded(false);
-      setIsLoading(false);
-      await saveScan(cls, 'recyclable');
-    }, 1200);
-  }, [saveScan]);
+  setTimeout(() => {
+    triggerLayoutAnimation();
+    setResult({
+      label: 'Glass Bottle',
+      recyclable: true,
+      special: false,
+      confidence: 0.95,
+      weight_estimate: 0.25,
+      reason: 'Standard clear glass bottle. (Simulation — not saved.)',
+    });
+    setRecycleStatus('recyclable');
+    setIsExpanded(false);
+    setIsLoading(false);
+  }, 1200);
+}, []);
 
   const handleExplain = useCallback(() => {
     if (!result || !recycleStatus) return;
