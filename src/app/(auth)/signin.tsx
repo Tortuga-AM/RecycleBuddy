@@ -1,10 +1,13 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { GlassCard } from '@/components/glass-card';
 import { Colors, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/auth-provider';
+import { logError } from '@/lib/logger';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -26,6 +29,7 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
 
   const { signInWithEmail, signUpWithEmail } = useAuth();
+  const router = useRouter();
   const theme = useTheme();
 
   const handleEmailAuth = async () => {
@@ -53,6 +57,9 @@ export default function SignInScreen() {
         ? await signUpWithEmail(email.trim(), password, displayName.trim() || undefined)
         : await signInWithEmail(email.trim(), password);
       if (result.error) setError(result.error);
+    } catch (error) {
+      logError(isSignUp ? 'Creating account' : 'Signing in', error);
+      setError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -79,7 +86,7 @@ export default function SignInScreen() {
               </ThemedText>
             </View>
 
-            <ThemedView type="backgroundElement" style={styles.card}>
+            <GlassCard style={styles.card}>
               <ThemedText type="heading" style={styles.cardTitle}>
                 {isSignUp ? 'Create account' : 'Welcome back'}
               </ThemedText>
@@ -152,7 +159,13 @@ export default function SignInScreen() {
                   {isSignUp ? 'Sign in' : 'Sign up'}
                 </ThemedText>
               </Pressable>
-            </ThemedView>
+            </GlassCard>
+            <Pressable onPress={() => router.push('/faq')} style={styles.faqLink}>
+              <Ionicons name="help-circle-outline" size={18} color={theme.primary} />
+              <ThemedText type="smallBold" themeColor="primary" style={{ marginLeft: Spacing.one }}>
+                Learn about recycling
+              </ThemedText>
+            </Pressable>
 
           </ScrollView>
         </KeyboardAvoidingView>
@@ -214,6 +227,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  faqLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.two,
   },
   dividerRow: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { ScrollView, Pressable, StyleSheet, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,8 +7,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing, Colors, estimateWeight } from '@/constants/theme';
+import { Spacing, estimateWeight } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { logError } from '@/lib/logger';
 
 interface ScanRow {
   label: string;
@@ -47,11 +48,15 @@ export default function HomeTab() {
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('zip_code')
       .eq('id', user.id)
       .maybeSingle();
+    if (error) {
+      logError('Loading profile location', error);
+      return;
+    }
     if (data?.zip_code) {
       setZipCode(data.zip_code);
       setShowZipPrompt(false);
@@ -71,7 +76,14 @@ export default function HomeTab() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error || !data) return;
+      if (error) {
+        logError('Loading scan statistics', error);
+        return;
+      }
+      if (!data) {
+        logError('Loading scan statistics', new Error('No scan data returned'));
+        return;
+      }
 
       const rows = data as ScanRow[];
       const breakdown: Record<string, number> = {};

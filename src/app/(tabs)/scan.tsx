@@ -4,6 +4,7 @@ import { estimateWeight, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
+import { logError, logWarning } from '@/lib/logger';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -92,14 +93,18 @@ export default function ScanTab() {
   }, []);
 
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      let loc = await Location.getLastKnownPositionAsync();
-      if (!loc) {
-        loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    void (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        let loc = await Location.getLastKnownPositionAsync();
+        if (!loc) {
+          loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        }
+        setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      } catch (error) {
+        logError('Getting device location', error);
       }
-      setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
     })();
   }, []);
 
@@ -109,19 +114,23 @@ export default function ScanTab() {
       try {
         const MapsModule = require('react-native-maps');
         setMapComponents({ MapView: MapsModule.default || View, Marker: MapsModule.Marker || View });
-      } catch (e) {
-        console.warn('Maps failed to load on native:', e);
+      } catch (error) {
+        logWarning('Maps are unavailable', error instanceof Error ? error.message : String(error));
       }
     }
   }, []);
 
   const loadZipCode = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('zip_code')
       .eq('id', user.id)
       .maybeSingle();
+    if (error) {
+      logError('Loading ZIP code for scanner', error);
+      return;
+    }
     if (data?.zip_code) {
       setZipCode(data.zip_code);
     } else {
@@ -190,9 +199,15 @@ export default function ScanTab() {
           category,
         },
       });
-      if (!error && data?.sites) {
+      if (error) {
+        logError('Finding disposal sites', error);
+        return;
+      }
+      if (data?.sites) {
         setDisposalSites(data.sites);
       }
+    } catch (error) {
+      logError('Finding disposal sites', error);
     } finally {
       setLoadingSites(false);
     }
@@ -201,7 +216,7 @@ export default function ScanTab() {
   const saveScan = useCallback(async (cls: ClassificationResult, status: string) => {
     if (!user) return;
     const weight = cls.weight_estimate ?? estimateWeight(cls.label);
-    await supabase.from('scan_history').insert({
+    const { error } = await supabase.from('scan_history').insert({
       user_id: user.id,
       label: cls.label,
       recyclable: cls.recyclable,
@@ -209,6 +224,7 @@ export default function ScanTab() {
       confidence: cls.confidence,
       weight_estimate: status !== 'notRecyclable' ? weight : null,
     });
+    if (error) logError('Saving scan history', error);
   }, [user]);
 
   const handleScan = useCallback(async () => {
@@ -249,6 +265,7 @@ export default function ScanTab() {
         fetchDisposalSites(cls.label);
       }
     } catch (error) {
+      logError('Scanning item', error);
       Alert.alert('Scan failed', 'Unable to classify the item. Please try again.');
       setCapturedPhoto(null);
       setIsExpanded(true);

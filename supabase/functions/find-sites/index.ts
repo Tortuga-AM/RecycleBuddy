@@ -6,6 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_API_KEY_BACKUP = Deno.env.get("GEMINI_API_KEY_BACKUP") ?? "";
 
@@ -27,17 +29,25 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
+  if (!req.headers.get("Authorization")?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401, headers: jsonHeaders });
+  }
 
   try {
     const { latitude, longitude, radiusKm, category } = await req.json();
-    if (typeof latitude !== "number" || typeof longitude !== "number") {
+    if (
+      typeof latitude !== "number" || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      typeof longitude !== "number" || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
+    ) {
       return new Response(
         JSON.stringify({ error: "latitude and longitude are required numbers" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: jsonHeaders }
       );
     }
 
-    const radius = radiusKm ?? 25;
+    const radius = typeof radiusKm === "number" && Number.isFinite(radiusKm)
+      ? Math.min(Math.max(radiusKm, 1), 100)
+      : 25;
     const radiusMeters = Math.round(radius * 1000);
 
     // Build Overpass QL query - search for recycling-related POIs
@@ -155,7 +165,9 @@ out center;
             const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
             const parsed = JSON.parse(cleaned);
             if (parsed && Array.isArray(parsed.sites)) {
-              sites = parsed.sites;
+              sites = parsed.sites
+                .filter((site: Site) => typeof site?.name === "string")
+                .slice(0, 15);
               console.log(`Successfully loaded ${sites.length} fallback sites from Gemini.`);
             }
           }
@@ -167,13 +179,13 @@ out center;
 
     return new Response(
       JSON.stringify({ sites }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: jsonHeaders }
     );
   } catch (err) {
     console.error("Edge function error:", err);
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error", sites: [] }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: jsonHeaders }
     );
   }
 });

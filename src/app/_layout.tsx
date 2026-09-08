@@ -15,8 +15,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const isPublicRoute = segments[0] === 'faq';
 
-    if (!user && !inAuthGroup) {
+    if (!user && !inAuthGroup && !isPublicRoute) {
       router.replace('/(auth)/signin');
     } else if (user && inAuthGroup) {
       if (Platform.OS === 'web') {
@@ -27,7 +28,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       }
       router.replace('/(tabs)');
     }
-  }, [user, loading, segments]);
+  }, [user, loading, segments, router]);
 
   // ONLY show the loading screen while fetching initial auth state.
   // Never unmount the children during a routing redirect!
@@ -49,6 +50,7 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="faq" options={{ presentation: 'card' }} />
           <Stack.Screen name="zipcode" options={{ presentation: 'modal' }} />
         </Stack>
       </AuthGuard>

@@ -2,6 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { logError } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,17 +20,19 @@ export default function ProfileTab() {
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+    const { data, error: profileError } = await supabase
       .from('profiles')
       .select('display_name, email, zip_code')
       .eq('id', user.id)
       .maybeSingle();
+    if (profileError) logError('Loading profile', profileError);
     if (data) setProfile(data);
 
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from('scan_history')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id);
+    if (countError) logError('Loading scan count', countError);
     if (count != null) setScanCount(count);
   }, [user]);
 
@@ -58,7 +61,12 @@ export default function ProfileTab() {
         text: 'Delete all',
         style: 'destructive',
         onPress: async () => {
-          await supabase.from('scan_history').delete().eq('user_id', user.id);
+          const { error } = await supabase.from('scan_history').delete().eq('user_id', user.id);
+          if (error) {
+            logError('Clearing scan history', error);
+            Alert.alert('Unable to clear history', 'Please try again.');
+            return;
+          }
           setScanCount(0);
         },
       },
@@ -128,6 +136,17 @@ export default function ProfileTab() {
           </ThemedView>
 
           <Pressable
+            style={[styles.faqButton, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '35' }]}
+            onPress={() => router.push('/faq')}
+          >
+            <Ionicons name="help-circle-outline" size={20} color={theme.primary} />
+            <ThemedText type="smallBold" themeColor="primary" style={{ marginLeft: Spacing.two }}>
+              Recycling FAQ
+            </ThemedText>
+            <Ionicons name="chevron-forward" size={18} color={theme.primary} style={{ marginLeft: 'auto' }} />
+          </Pressable>
+
+          <Pressable
             style={[styles.signOutButton, { backgroundColor: theme.error + '15', borderColor: theme.error + '40' }]}
             onPress={handleSignOut}
           >
@@ -188,5 +207,13 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.four,
     borderWidth: 1,
     marginTop: Spacing.two,
+  },
+  faqButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    padding: Spacing.three,
+    borderRadius: Spacing.four,
+    borderWidth: 1,
   },
 });
