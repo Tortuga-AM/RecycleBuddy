@@ -6,6 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_API_KEY_BACKUP = Deno.env.get("GEMINI_API_KEY_BACKUP") ?? "";
 
@@ -36,22 +38,28 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
+  if (!req.headers.get("Authorization")?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401, headers: jsonHeaders });
+  }
 
   try {
     const activeKey = GEMINI_API_KEY || GEMINI_API_KEY_BACKUP;
     if (!activeKey) {
       return new Response(
         JSON.stringify({ error: "Gemini API key not configured on server" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: jsonHeaders }
       );
     }
 
     const { imageBase64, zipCode } = await req.json();
-    if (!imageBase64 || typeof imageBase64 !== "string") {
+    if (!imageBase64 || typeof imageBase64 !== "string" || imageBase64.length > 8_000_000) {
       return new Response(
-        JSON.stringify({ error: "imageBase64 is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "A valid image under 6 MB is required" }),
+        { status: 400, headers: jsonHeaders }
       );
+    }
+    if (zipCode !== undefined && (typeof zipCode !== "string" || zipCode.length > 20)) {
+      return new Response(JSON.stringify({ error: "Invalid ZIP code" }), { status: 400, headers: jsonHeaders });
     }
 
     let customPrompt = prompt;
@@ -59,7 +67,7 @@ Deno.serve(async (req: Request) => {
       customPrompt += `\nAdditional Context: The user is located in ZIP code "${zipCode}". Please search the web or check local regulations specifically for ZIP code "${zipCode}" to determine if this item is accepted in their local curbside recycling program, needs special disposal, or is not recyclable there. Explain the local guidelines in the "reason" field.`;
     }
 
-    let response = await callGemini(GEMINI_API_KEY, imageBase64, customPrompt);
+    let response = await callGemini(activeKey, imageBase64, customPrompt);
     let json = await response.json();
 
     if ((json.error || !response.ok) && GEMINI_API_KEY_BACKUP) {
@@ -79,7 +87,7 @@ Deno.serve(async (req: Request) => {
       console.error("Gemini API Error:", JSON.stringify(json.error));
       return new Response(
         JSON.stringify({ error: json.error.message ?? "Gemini API error" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 502, headers: jsonHeaders }
       );
     }
 
@@ -87,7 +95,7 @@ Deno.serve(async (req: Request) => {
     if (!text) {
       return new Response(
         JSON.stringify({ error: "No classification result returned" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 502, headers: jsonHeaders }
       );
     }
 
@@ -108,20 +116,20 @@ Deno.serve(async (req: Request) => {
       parsed = JSON.parse(cleaned);
     } catch {
       return new Response(
-        JSON.stringify({ error: "Failed to parse classification result", raw: cleaned }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Failed to parse classification result" }),
+        { status: 502, headers: jsonHeaders }
       );
     }
 
     return new Response(
       JSON.stringify(parsed),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: jsonHeaders }
     );
   } catch (err) {
     console.error("Edge function error:", err);
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: jsonHeaders }
     );
   }
 });

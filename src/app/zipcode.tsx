@@ -10,6 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { logError } from '@/lib/logger';
 
 export default function ZipCodeScreen() {
   const router = useRouter();
@@ -22,11 +23,12 @@ export default function ZipCodeScreen() {
 
   const loadZipCode = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('zip_code')
       .eq('id', user.id)
       .maybeSingle();
+    if (error) logError('Loading ZIP code', error);
     if (data?.zip_code) setZipCode(data.zip_code);
   }, [user]);
 
@@ -73,17 +75,19 @@ export default function ZipCodeScreen() {
     setIsSaving(true);
     try {
       if (user) {
-        await supabase
+        const { error } = await supabase
           .from('profiles')
           .update({ zip_code: trimmed })
           .eq('id', user.id);
+        if (error) throw error;
       }
       if (router.canGoBack()) {
         router.back();
       } else {
         router.replace('/(tabs)/scan');
       }
-    } catch {
+    } catch (error) {
+      logError('Saving ZIP code', error);
       Alert.alert('Unable to save zip code. Please try again.');
     } finally {
       setIsSaving(false);

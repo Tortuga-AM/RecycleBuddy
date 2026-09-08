@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { logError } from '@/lib/logger';
 import { Session, User } from '@supabase/supabase-js';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
@@ -19,9 +20,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    void supabase.auth.getSession().then(({ data: { session: s }, error }) => {
+      if (error) logError('Loading the saved session', error);
       setSession(s);
       setUser(s?.user ?? null);
+      setLoading(false);
+    }).catch((error: unknown) => {
+      logError('Loading the saved session', error);
       setLoading(false);
     });
 
@@ -48,7 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) logError('Signing out', error);
   }, []);
 
   return (
